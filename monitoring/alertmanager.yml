@@ -1,0 +1,43 @@
+# ==============================================================================
+# Configuration Alertmanager - Lafarge Truck Traffic Management
+# ==============================================================================
+
+global:
+  resolve_timeout: 1m
+
+# Structure de routage : toutes les alertes sont regroupées par nom d'alerte
+# et par instance, avec un délai anti-spam, puis envoyées au récepteur Slack.
+route:
+  receiver: "slack-notifications"
+  group_by: ["alertname", "instance"]
+  group_wait: 30s        # attend 30s pour regrouper des alertes similaires
+  group_interval: 5m     # délai entre deux notifications d'un même groupe
+  repeat_interval: 3h    # ré-envoie la notification si l'alerte persiste
+
+  routes:
+    # Les alertes critiques sont envoyées immédiatement, sans attente de regroupement
+    - matchers:
+        - severity = "critical"
+      receiver: "slack-notifications"
+      group_wait: 10s
+      continue: false
+
+receivers:
+  - name: "slack-notifications" # خلي السّمية كيف ما هي باش ما تضطرش تبدلها ف الـ route
+    discord_configs:
+      - webhook_url: "***REMOVED***"
+        title: "{{ .CommonAnnotations.summary }}"
+        message: |-
+          **Statut :** {{ .Status | toUpper }}
+          **Sévérité :** {{ .CommonLabels.severity }}
+          **Détails :** {{ .CommonAnnotations.description }}
+          **Nombre d'alertes actives :** {{ .Alerts.Firing | len }}
+
+inhibit_rules:
+  # Évite de recevoir une alerte de latence/erreur si l'instance est déjà
+  # signalée totalement injoignable (InstanceDown), pour réduire le bruit.
+  - source_matchers:
+      - alertname = "InstanceDown"
+    target_matchers:
+      - alertname =~ "HighErrorRate|HighRequestLatency"
+    equal: ["instance"]

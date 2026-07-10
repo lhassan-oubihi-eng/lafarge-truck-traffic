@@ -1,0 +1,139 @@
+version: "3.9"
+
+# ==============================================================================
+# STACK 100% LOCALE - Lafarge Truck Traffic Management
+# Permet de lancer l'application ET tout l'observabilité (Prometheus,
+# Alertmanager, Grafana, Node Exporter) sur votre machine, sans aucune
+# ressource AWS. Idéal pour valider le fonctionnement avant déploiement.
+#
+# Démarrage :
+#   docker compose -f docker-compose.local.yml up -d --build
+#
+# Accès :
+#   - Application (Dashboard) : http://localhost:8080
+#   - Métriques applicatives   : http://localhost:8080/metrics
+#   - Prometheus               : http://localhost:9090
+#   - Alertmanager             : http://localhost:9093
+#   - Grafana                  : http://localhost:3000  (admin / ChangeMe_Lafarge2026!)
+#
+# Arrêt :
+#   docker compose -f docker-compose.local.yml down -v
+# ==============================================================================
+
+services:
+
+  # --------------------------------------------------------------------
+  # Application Truck Traffic Management
+  # --------------------------------------------------------------------
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: truck-traffic-app-local
+    restart: unless-stopped
+    ports:
+      - "8080:8000"
+    networks:
+      - local-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # --------------------------------------------------------------------
+  # Node Exporter : expose les métriques CPU/RAM/disque de la machine hôte,
+  # pour tester localement la règle d'alerte HighCPUUsage.
+  # --------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter-local
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    ports:
+      - "9100:9100"
+    networks:
+      - local-net
+
+  # --------------------------------------------------------------------
+  # Prometheus : scrape l'application et node-exporter directement via
+  # le réseau Docker interne (pas d'ALB, pas de découverte AWS en local).
+  # --------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus-local
+    restart: unless-stopped
+    depends_on:
+      - app
+      - node-exporter
+    volumes:
+      - ./monitoring/prometheus.local.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_local_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    networks:
+      - local-net
+
+  # --------------------------------------------------------------------
+  # Alertmanager : routage des alertes (webhook Slack simulé, identique
+  # à la configuration utilisée en production).
+  # --------------------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager-local
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_local_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    ports:
+      - "9093:9093"
+    networks:
+      - local-net
+
+  # --------------------------------------------------------------------
+  # Grafana : visualisation des métriques collectées par Prometheus.
+  # --------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana-local
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=ChangeMe_Lafarge2026!
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_local_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - local-net
+
+networks:
+  local-net:
+    driver: bridge
+
+volumes:
+  prometheus_local_data:
+  alertmanager_local_data:
+  grafana_local_data:

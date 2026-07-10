@@ -1,0 +1,76 @@
+# ==============================================================================
+# Configuration Prometheus - Lafarge Truck Traffic Management
+# ==============================================================================
+
+global:
+  scrape_interval: 15s      # Fréquence de scraping par défaut
+  evaluation_interval: 15s  # Fréquence d'évaluation des règles d'alerte
+  external_labels:
+    environment: "production"
+    project: "lafarge-truck-traffic"
+
+# Fichiers contenant les règles d'alerte (erreurs 500, CPU, disponibilité...)
+rule_files:
+  - "alert_rules.yml"
+
+# Connexion à Alertmanager pour le routage/notification des alertes déclenchées
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "alertmanager:9093"
+
+scrape_configs:
+
+  # ----------------------------------------------------------------------
+  # Job 1 : Application Truck Traffic Management, scrapée via le DNS
+  # public de l'Application Load Balancer (l'ALB répartit chaque requête
+  # de scraping vers une instance saine de l'Auto Scaling Group).
+  #
+  # IMPORTANT : remplacer la valeur ci-dessous par la sortie réelle
+  #   terraform output -raw alb_dns_name
+  # obtenue après le déploiement de l'infrastructure.
+  # ----------------------------------------------------------------------
+  - job_name: "truck-traffic-app"
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - "lafarge-truck-traffic-alb-1839204675.eu-west-3.elb.amazonaws.com"
+        labels:
+          service: "truck-traffic-app"
+          tier: "frontend"
+
+  # ----------------------------------------------------------------------
+  # Job 2 : Node Exporter (CPU/RAM/disque) sur chaque instance EC2 de
+  # l'Auto Scaling Group, découvertes dynamiquement via l'API AWS EC2.
+  # Nécessite que l'hôte exécutant Prometheus dispose d'identifiants AWS
+  # (variables d'environnement AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY,
+  # ou un rôle IAM attaché s'il tourne lui-même sur EC2) avec la
+  # permission IAM "ec2:DescribeInstances".
+  # ----------------------------------------------------------------------
+  - job_name: "node-exporter"
+    ec2_sd_configs:
+      - region: eu-west-3
+        port: 9100
+        filters:
+          - name: "tag:Name"
+            values: ["lafarge-truck-traffic-asg-instance"]
+          - name: "instance-state-name"
+            values: ["running"]
+    relabel_configs:
+      # Utilise l'IP privée EC2 comme adresse de scraping
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: __address__
+        replacement: "${1}:9100"
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      - source_labels: [__meta_ec2_availability_zone]
+        target_label: availability_zone
+
+  # ----------------------------------------------------------------------
+  # Job 3 : Prometheus se scrape lui-même (santé du monitoring)
+  # ----------------------------------------------------------------------
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

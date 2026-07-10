@@ -1,0 +1,106 @@
+# ==============================================================================
+# .gitignore - Lafarge Truck Traffic Management
+# ==============================================================================
+
+# --------------------------------------------------------------------------
+# Terraform
+# --------------------------------------------------------------------------
+# Répertoires locaux de plugins/providers téléchargés
+**/.terraform/
+.terraform/
+.terraform.lock.hcl
+
+# State Terraform (contient potentiellement des données sensibles : IPs,
+# ARNs, IDs de ressources). Ne JAMAIS committer, même en mode backend local.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Plans Terraform (peuvent contenir des valeurs sensibles en clair)
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+
+# Fichiers de variables contenant potentiellement des secrets
+*.tfvars
+*.tfvars.json
+!example.tfvars
+!*.tfvars.example
+
+# Fichiers de configuration de backend générés dynamiquement (CI/CD)
+backend.hcl
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# --------------------------------------------------------------------------
+# Secrets et identifiants
+# --------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+credentials.json
+secrets.yml
+secrets.yaml
+aws-credentials*
+*_rsa
+*_rsa.pub
+
+# --------------------------------------------------------------------------
+# Python (application FastAPI)
+# --------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+pip-log.txt
+
+# --------------------------------------------------------------------------
+# Docker
+# --------------------------------------------------------------------------
+*.log
+docker-compose.override.yml
+
+# --------------------------------------------------------------------------
+# Données persistées par les volumes montés en bind (si utilisés en local)
+# --------------------------------------------------------------------------
+monitoring/data/
+grafana-data/
+prometheus-data/
+alertmanager-data/
+
+# --------------------------------------------------------------------------
+# Jenkins
+# --------------------------------------------------------------------------
+.jenkins/
+
+# --------------------------------------------------------------------------
+# IDE / Éditeurs
+# --------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --------------------------------------------------------------------------
+# Divers
+# --------------------------------------------------------------------------
+*.zip
+*.tar.gz
+.cache/
