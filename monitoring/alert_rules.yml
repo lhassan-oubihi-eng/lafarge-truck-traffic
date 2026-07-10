@@ -1,0 +1,77 @@
+# ==============================================================================
+# Règles d'alerte - Lafarge Truck Traffic Management
+# ==============================================================================
+
+groups:
+
+  - name: truck-traffic-app.rules
+    rules:
+
+      # ----------------------------------------------------------------
+      # Alerte : taux d'erreurs HTTP 500 anormalement élevé sur l'application
+      # Se déclenche si plus de 5% des requêtes des 5 dernières minutes
+      # retournent un statut 5xx, pendant au moins 2 minutes consécutives.
+      # ----------------------------------------------------------------
+      - alert: HighErrorRate
+        expr: >
+          (
+            sum(rate(http_requests_total{http_status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          team: devops-lafarge
+        annotations:
+          summary: "Taux d'erreurs HTTP 500 élevé sur Truck Traffic Management"
+          description: >-
+            Plus de 5% des requêtes retournent une erreur 5xx depuis 2 minutes.
+            Vérifier les logs applicatifs et l'état des instances derrière l'ALB.
+
+      # ----------------------------------------------------------------
+      # Alerte : instance applicative injoignable (échec de scraping)
+      # ----------------------------------------------------------------
+      - alert: InstanceDown
+        expr: up{job="truck-traffic-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: devops-lafarge
+        annotations:
+          summary: "L'application Truck Traffic Management ne répond plus"
+          description: >-
+            La cible {{ $labels.instance }} est injoignable depuis plus d'1 minute.
+
+      # ----------------------------------------------------------------
+      # Alerte : surcharge CPU sur une instance EC2 de l'Auto Scaling Group
+      # Se déclenche si l'utilisation CPU moyenne dépasse 80% pendant 5 min.
+      # Basée sur les métriques exposées par Node Exporter (job "node-exporter").
+      # ----------------------------------------------------------------
+      - alert: HighCPUUsage
+        expr: >
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: devops-lafarge
+        annotations:
+          summary: "Charge CPU élevée sur l'instance {{ $labels.instance }}"
+          description: >-
+            L'utilisation CPU dépasse 80% depuis 5 minutes. L'Auto Scaling Group
+            devrait déclencher un scale-out automatique (politique target-tracking).
+
+      # ----------------------------------------------------------------
+      # Alerte : latence anormalement élevée sur les requêtes HTTP
+      # ----------------------------------------------------------------
+      - alert: HighRequestLatency
+        expr: >
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1.5
+        for: 3m
+        labels:
+          severity: warning
+          team: devops-lafarge
+        annotations:
+          summary: "Latence P95 élevée sur Truck Traffic Management"
+          description: >-
+            95% des requêtes mettent plus de 1.5 seconde à être traitées depuis 3 minutes.
