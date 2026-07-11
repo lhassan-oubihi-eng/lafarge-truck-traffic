@@ -4,6 +4,7 @@ USER root
 
 # تثبيت الحزم الأساسية + Python + Trivy
 RUN apt-get update && apt-get install -y \
+    make \
     git curl lsb-release gnupg apt-transport-https ca-certificates \
     awscli \
     python3 python3-pip \
