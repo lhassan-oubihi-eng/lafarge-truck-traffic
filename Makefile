@@ -33,14 +33,32 @@ help: ## Affiche cette aide
 # ==============================================================================
 # MODE LOCAL - Test sur poste de développement (sans AWS)
 # ==============================================================================
+# هاد الـ target كيجمع كلشي
+local-setup:
+	@echo "Cleaning old environment..."
+	@make local-clean
+	@echo "Building custom Jenkins image..."
+	@docker compose -f docker-compose.local.yml build
+	@echo "Starting the stack..."
+	@docker compose -f docker-compose.local.yml up -d
+	@echo "Jenkins is ready! Use 'make get-jenkins-password' to get the password."
 
-local-up: ## Lance la stack complète en local (app + Prometheus + Alertmanager + Grafana)
+local-up: ## Lance la stack complète en local
 	docker compose -f $(LOCAL_COMPOSE_FILE) up -d --build
 	@echo ""
 	@echo "Application  : http://localhost:8080"
 	@echo "Prometheus   : http://localhost:9090"
 	@echo "Alertmanager : http://localhost:9093"
 	@echo "Grafana      : http://localhost:3000 (admin / ChangeMe_Lafarge2026!)"
+	@echo "Jenkins      : http://localhost:8081"
+	@echo ""
+	@echo "--- Jenkins Initial Password ---"
+	@sleep 5
+	@docker exec jenkins-local cat /var/jenkins_home/secrets/initialAdminPassword || echo "Jenkins is not ready yet, run 'make get-jenkins-password' later."
+
+# زيد هاد الـ target الجديد باش يلا تعطل Jenkins تقدر تجبد الباسورد بوحدو فـ أي وقت
+get-jenkins-password:
+	@docker exec jenkins-local cat /var/jenkins_home/secrets/initialAdminPassword
 
 local-down: ## Arrête la stack locale (conserve les volumes)
 	docker compose -f $(LOCAL_COMPOSE_FILE) down
