@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Unit Testing') {
             steps {
-                // دابا كيعيط لـ make test اللي زدنا
+                // دابا كيعيط لـ make test: اللي زدنا
                 sh 'make test'
             }
         }
@@ -15,6 +15,7 @@ pipeline {
                 sh 'trivy fs --exit-code 1 .'
             }
         }
+
 
 	stage('Terraform') {
             steps {
