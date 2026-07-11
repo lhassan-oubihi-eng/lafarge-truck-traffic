@@ -67,7 +67,7 @@ variable "key_pair_name" {
 variable "app_docker_image" {
   description = "Image Docker de l'application publiée sur le registre (Docker Hub ou ECR), construite et poussée par le pipeline Jenkins"
   type        = string
-  default     = "lafargeholcim/truck-traffic-app:latest"
+  default     = "lhassan1/truck-traffic-app:latest"
 }
 
 variable "admin_cidr_ssh" {
