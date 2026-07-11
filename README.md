@@ -166,3 +166,4 @@ update de l'ASG → smoke test `/healthz`.
   exposées avec une IP publique directe (actuellement en subnets publics pour
   simplifier le HA de niveau démo).
 Testing Jenkins automation
+Pipeline test #2
