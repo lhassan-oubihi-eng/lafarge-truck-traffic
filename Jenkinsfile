@@ -31,14 +31,28 @@ pipeline {
             }
         }	
 
-        stage('Docker & AWS Refresh') {
+	stage('Docker & AWS Refresh') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                // ندمجو الـ Credentials ديال Docker و AWS في نفس البلوك
+                withCredentials([
+                    usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER'),
+                    string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    // 1. Login Docker
                     sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-                    // هادي كتجمع build + push + refresh ASG
-                    sh 'make docker-push' 
+                    
+                    // 2. Push Docker image
+                    sh 'make docker-push'
+                    
+                    // 3. Refresh AWS ASG (مع تمرير الـ Credentials لـ AWS CLI)
+                    sh '''
+                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        export AWS_DEFAULT_REGION=eu-west-3
+                        make aws-refresh
+                    '''
                 }
             }
         }
-    }
 }
