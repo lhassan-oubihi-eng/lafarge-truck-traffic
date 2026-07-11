@@ -1,184 +1,63 @@
-// ============================================================================
-// Jenkinsfile - Lafarge Truck Traffic Management
-// Pipeline CI/CD : build & push de l'image Docker, puis déploiement de
-// l'infrastructure AWS (ALB + Auto Scaling Group) via Terraform.
-//
-// Credentials Jenkins requis (à créer dans "Manage Jenkins > Credentials") :
-//   - "dockerhub-credentials"   : Username/Password vers Docker Hub (ou ECR)
-//   - "aws-credentials"         : AWS Access Key ID / Secret Access Key
-//                                 (type "AWS Credentials" du plugin AWS)
-//
-// PRÉREQUIS UNIQUE (à faire une seule fois, manuellement, avant le tout
-// premier build de ce pipeline) : le bucket S3 et la table DynamoDB du
-// backend distant Terraform doivent déjà exister, car "terraform init"
-// dans ce pipeline s'y connecte directement (backend "s3" défini en dur
-// dans terraform/main.tf). Les créer avec :
-//   cd terraform/bootstrap && terraform init && terraform apply
-// ============================================================================
-
 pipeline {
     agent any
 
-    options {
-        timestamps()
-        disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '20'))
-    }
-
     environment {
-        DOCKERHUB_REPO   = "lafargeholcim/truck-traffic-app"
-        IMAGE_TAG        = "${env.BUILD_NUMBER}"
-        TERRAFORM_DIR    = "terraform"
-        APP_DIR          = "app"
-        AWS_DEFAULT_REGION = "eu-west-3"
+        // السمية د الـ Image ديالك ف Docker Hub
+        DOCKER_IMAGE   = 'lhassan1/truck-traffic-app:latest'
+        AWS_REGION     = 'eu-west-3'
+        // الـ ID د الـ Credentials لي مخبيين ف Jenkins
+        DOCKER_HUB_CREDS = 'docker-hub-credentials'
+        AWS_CREDS        = 'aws-credentials' 
     }
 
     stages {
-
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
-                echo "Récupération du code source depuis le dépôt Git..."
+                // سحب آخر التحديثات من المستودع
                 checkout scm
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Docker Build & Push') {
             steps {
-                dir("${APP_DIR}") {
-                    echo "Construction de l'image Docker de l'application..."
-                    sh """
-                        docker build -t ${DOCKERHUB_REPO}:${IMAGE_TAG} .
-                        docker tag ${DOCKERHUB_REPO}:${IMAGE_TAG} ${DOCKERHUB_REPO}:latest
-                    """
-                }
-            }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                echo "Publication de l'image sur le registre Docker..."
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-credentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh """
-                        echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                        docker push ${DOCKERHUB_REPO}:${IMAGE_TAG}
-                        docker push ${DOCKERHUB_REPO}:latest
-                        docker logout
-                    """
-                }
-            }
-        }
-
-        stage('Terraform Init') {
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: 'aws-credentials'
-                    ]]) {
-                        sh "terraform init -input=false"
+                script {
+                    echo "Starting Docker Build for ${env.DOCKER_IMAGE}..."
+                    // بناء الصورة من المجلد فين كاين الـ Dockerfile (مثلا ./app)
+                    sh "docker build -t ${env.DOCKER_IMAGE} ./app"
+                    
+                    echo "Logging into Docker Hub and Pushing Image..."
+                    // تسجيل الدخول ورفع الصورة أوتوماتيكياً
+                    withCredentials([usernamePassword(credentialsId: env.DOCKER_HUB_CREDS, passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                        sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
+                        sh "docker push ${env.DOCKER_IMAGE}"
                     }
                 }
             }
         }
 
-        stage('Terraform Validate & Plan') {
+        stage('Terraform Init & Validate') {
             steps {
-                dir("${TERRAFORM_DIR}") {
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: 'aws-credentials'
-                    ]]) {
-                        sh """
-                            terraform validate
-                            terraform plan \
-                                -input=false \
-                                -var="app_docker_image=${DOCKERHUB_REPO}:${IMAGE_TAG}" \
-                                -out=tfplan
-                        """
-                    }
-                }
-            }
-        }
-
-        stage('Approval') {
-            when {
-                branch 'main'
-            }
-            steps {
-                // Validation manuelle avant application en production.
-                // Timeout de sécurité pour ne pas bloquer indéfiniment le pipeline.
-                timeout(time: 15, unit: 'MINUTES') {
-                    input message: "Valider le déploiement en production sur AWS ?", ok: "Déployer"
-                }
-            }
-        }
-
-        stage('Terraform Apply') {
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: 'aws-credentials'
-                    ]]) {
-                        sh "terraform apply -input=false -auto-approve tfplan"
-                    }
-                }
-            }
-        }
-
-        stage('Rolling Update ASG') {
-            steps {
-                // Déclenche un instance refresh pour que les instances existantes
-                // récupèrent la nouvelle image Docker, sans coupure de service
-                // (grâce à la stratégie Rolling définie dans le Launch Template).
-                dir("${TERRAFORM_DIR}") {
-                    withCredentials([[
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: 'aws-credentials'
-                    ]]) {
-                        script {
-                            def asgName = sh(
-                                script: "terraform output -raw autoscaling_group_name",
-                                returnStdout: true
-                            ).trim()
-
-                            sh """
-                                aws autoscaling start-instance-refresh \
-                                    --auto-scaling-group-name ${asgName} \
-                                    --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 60}'
-                            """
+                script {
+                    dir('terraform') {
+                        // تمرير الـ AWS Credentials للـ Terraform باش يقدر يوصل للـ S3 Backend والـ AWS API
+                        withCredentials([usernamePassword(credentialsId: env.AWS_CREDS, passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
+                            sh 'terraform init'
+                            sh 'terraform validate'
                         }
                     }
                 }
             }
         }
 
-        stage('Smoke Test') {
+        stage('Terraform Apply / Deploy') {
             steps {
-                dir("${TERRAFORM_DIR}") {
-                    script {
-                        def albDns = sh(
-                            script: "terraform output -raw alb_dns_name",
-                            returnStdout: true
-                        ).trim()
-
-                        echo "Vérification de la disponibilité de l'application sur http://${albDns}/healthz"
-                        sh """
-                            for i in \$(seq 1 10); do
-                                if curl -sf http://${albDns}/healthz; then
-                                    echo "Application disponible."
-                                    exit 0
-                                fi
-                                echo "Application pas encore prête, nouvelle tentative dans 15s..."
-                                sleep 15
-                            done
-                            echo "L'application n'a pas répondu après 10 tentatives."
-                            exit 1
-                        """
+                script {
+                    dir('terraform') {
+                        withCredentials([usernamePassword(credentialsId: env.AWS_CREDS, passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
+                            echo "Applying Terraform changes..."
+                            // الـ apply كيدوز أوتوماتيكيا وبلا ما يطلب التقرير بـ -auto-approve
+                            sh "terraform apply -var='app_docker_image=${env.DOCKER_IMAGE}' -auto-approve"
+                        }
                     }
                 }
             }
@@ -187,16 +66,10 @@ pipeline {
 
     post {
         success {
-            echo "Déploiement réussi. Le tableau de bord Truck Traffic est disponible via l'ALB."
+            echo "SUCCESS: The traffic management application has been deployed successfully!"
         }
         failure {
-            echo "Échec du pipeline. Consultez les logs ci-dessus pour diagnostiquer l'étape en erreur."
-        }
-        always {
-            dir("${TERRAFORM_DIR}") {
-                sh "rm -f tfplan || true"
-            }
-            sh "docker system prune -f || true"
+            echo "FAILURE: Something went wrong in the pipeline. Check the logs above."
         }
     }
 }

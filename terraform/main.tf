@@ -12,15 +12,6 @@ terraform {
   # du state entre les développeurs et le pipeline Jenkins, avec historique
   # de versions (S3 versioning) et protection contre les exécutions
   # concurrentes (DynamoDB lock).
-  #
-  # Ces ressources (bucket + table) sont créées par le module
-  # terraform/bootstrap/, à exécuter UNE SEULE FOIS avant ce premier init :
-  #   cd terraform/bootstrap && terraform init && terraform apply
-  #
-  # Note technique : un bloc "backend" ne peut pas référencer de variables
-  # Terraform (limitation native de Terraform, la configuration du backend
-  # est résolue avant le chargement des variables) — les valeurs doivent
-  # donc être écrites en dur ici, identiques aux outputs du bootstrap.
   backend "s3" {
     bucket         = "lafarge-truck-traffic-tfstate-eu-west3"
     key            = "truck-traffic/terraform.tfstate"
@@ -109,15 +100,14 @@ resource "aws_route_table_association" "public" {
 
 # --------------------------------------------------------------------------
 # Security Group : Application Load Balancer
-# Ouvert sur le port 80 depuis Internet (trafic utilisateur entrant)
 # --------------------------------------------------------------------------
 resource "aws_security_group" "alb" {
   name        = "${var.project_name}-alb-sg"
-  description = "Autorise le trafic HTTP entrant public vers le Load Balancer"
+  description = "Allow inbound public HTTP traffic to the Load Balancer"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "HTTP depuis Internet"
+    description = "Allow HTTP inbound from Internet"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -125,7 +115,7 @@ resource "aws_security_group" "alb" {
   }
 
   egress {
-    description = "Sortie illimitée (vers les instances EC2 cibles)"
+    description = "Unlimited outbound traffic to target EC2 instances"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -139,23 +129,22 @@ resource "aws_security_group" "alb" {
 
 # --------------------------------------------------------------------------
 # Security Group : Instances EC2 applicatives
-# N'accepte le trafic HTTP QUE depuis le Security Group du Load Balancer
 # --------------------------------------------------------------------------
 resource "aws_security_group" "ec2_app" {
   name        = "${var.project_name}-ec2-sg"
-  description = "Autorise le trafic HTTP uniquement depuis l'ALB, et SSH depuis le réseau d'administration"
+  description = "Allow HTTP traffic from ALB and SSH from admin network"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "HTTP uniquement depuis le Load Balancer"
-    from_port        = 80
-    to_port           = 80
-    protocol          = "tcp"
-    security_groups   = [aws_security_group.alb.id]
+    description     = "HTTP only from Load Balancer"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
   }
 
   ingress {
-    description = "Node Exporter (métriques CPU/RAM) accessible depuis le VPC pour Prometheus"
+    description = "Node Exporter metrics accessible within VPC for Prometheus"
     from_port   = 9100
     to_port     = 9100
     protocol    = "tcp"
@@ -163,7 +152,7 @@ resource "aws_security_group" "ec2_app" {
   }
 
   ingress {
-    description = "SSH pour administration/dépannage, restreint au réseau interne/VPN"
+    description = "SSH for administration restricted to internal network"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
@@ -171,7 +160,7 @@ resource "aws_security_group" "ec2_app" {
   }
 
   egress {
-    description = "Sortie illimitée (mises à jour système, pull d'images Docker, etc.)"
+    description = "Unlimited outbound traffic for system updates and Docker image pulls"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -184,8 +173,7 @@ resource "aws_security_group" "ec2_app" {
 }
 
 # --------------------------------------------------------------------------
-# IAM : rôle d'instance permettant la gestion via AWS Systems Manager (SSM)
-# Évite d'ouvrir SSH inutilement et facilite le dépannage sécurisé.
+# IAM : rôle d'instance pour AWS Systems Manager (SSM)
 # --------------------------------------------------------------------------
 resource "aws_iam_role" "ec2_role" {
   name = "${var.project_name}-ec2-role"
@@ -246,7 +234,6 @@ resource "aws_lb_target_group" "app" {
     unhealthy_threshold = 3
   }
 
-  # Assure une bascule progressive lors des déploiements (rolling update)
   deregistration_delay = 30
 
   tags = merge(var.tags, {
@@ -272,7 +259,6 @@ resource "aws_launch_template" "app" {
   name_prefix   = "${var.project_name}-lt-"
   image_id      = data.aws_ami.amazon_linux.id
   instance_type = var.instance_type
-  key_name      = var.key_pair_name
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
@@ -280,11 +266,10 @@ resource "aws_launch_template" "app" {
 
   network_interfaces {
     associate_public_ip_address = true
-    security_groups              = [aws_security_group.ec2_app.id]
+    security_groups             = [aws_security_group.ec2_app.id]
   }
 
-  # Script d'amorçage : installe Docker + Node Exporter, puis démarre le
-  # conteneur applicatif. Le conteneur écoute sur le port 80 côté hôte.
+  # Script d'amorçage : installe Docker + Node Exporter, puis démarre le conteneur.
   user_data = base64encode(<<-EOF
     #!/bin/bash
     set -e
@@ -296,7 +281,7 @@ resource "aws_launch_template" "app" {
     systemctl start docker
     usermod -aG docker ec2-user
 
-    # --- Déploiement du conteneur applicatif Truck Traffic Management ---
+    # --- Déploiement du conteneur applicatif ---
     docker pull ${var.app_docker_image}
     docker run -d \
       --name truck-traffic-app \
@@ -304,7 +289,7 @@ resource "aws_launch_template" "app" {
       -p 80:8000 \
       ${var.app_docker_image}
 
-    # --- Installation de Node Exporter (métriques système pour Prometheus) ---
+    # --- Installation de Node Exporter ---
     NODE_EXPORTER_VERSION="1.8.2"
     curl -sSL -o /tmp/node_exporter.tar.gz \
       "https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz"
@@ -339,14 +324,13 @@ resource "aws_launch_template" "app" {
   }
 
   metadata_options {
-    http_tokens   = "required" # Force IMDSv2 pour la sécurité
+    http_tokens   = "required" 
     http_endpoint = "enabled"
   }
 }
 
 # --------------------------------------------------------------------------
-# Auto Scaling Group : répartit les instances sur les 2 subnets publics
-# et les enregistre automatiquement auprès du Target Group de l'ALB
+# Auto Scaling Group
 # --------------------------------------------------------------------------
 resource "aws_autoscaling_group" "app" {
   name                = "${var.project_name}-asg"
@@ -357,15 +341,13 @@ resource "aws_autoscaling_group" "app" {
   target_group_arns   = [aws_lb_target_group.app.arn]
 
   health_check_type         = "ELB"
-  health_check_grace_period = 60
+  health_check_grace_period = 400
 
   launch_template {
     id      = aws_launch_template.app.id
     version = "$Latest"
   }
 
-  # Rolling update automatique lors d'un changement de Launch Template
-  # (par exemple, nouvelle image Docker poussée par Jenkins)
   instance_refresh {
     strategy = "Rolling"
     preferences {
@@ -391,7 +373,7 @@ resource "aws_autoscaling_group" "app" {
 }
 
 # --------------------------------------------------------------------------
-# Politiques de scaling automatique basées sur l'utilisation CPU moyenne
+# Politiques de scaling automatique (Target Tracking CPU)
 # --------------------------------------------------------------------------
 resource "aws_autoscaling_policy" "scale_out" {
   name                   = "${var.project_name}-scale-out"

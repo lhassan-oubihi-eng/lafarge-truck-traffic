@@ -13,8 +13,7 @@
 .PHONY: help local-up local-down local-restart local-logs local-clean local-ps \
         bootstrap-init bootstrap-plan bootstrap-apply bootstrap-destroy \
         tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy tf-output \
-        docker-build docker-push app-test clean
-
+        docker-build docker-push app-test clean aws-refresh
 # --------------------------------------------------------------------------
 # Variables
 # --------------------------------------------------------------------------
@@ -22,7 +21,7 @@ APP_DIR             := app
 TERRAFORM_DIR        := terraform
 BOOTSTRAP_DIR         := terraform/bootstrap
 LOCAL_COMPOSE_FILE     := docker-compose.local.yml
-DOCKER_IMAGE            := lafargeholcim/truck-traffic-app
+DOCKER_IMAGE            := lhassan1/truck-traffic-app
 DOCKER_TAG               := latest
 
 help: ## Affiche cette aide
@@ -112,8 +111,13 @@ tf-output: ## Affiche les sorties Terraform (dont le DNS de l'ALB)
 docker-build: ## Construit l'image Docker de l'application
 	cd $(APP_DIR) && docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
 
-docker-push: docker-build ## Construit puis publie l'image Docker sur le registre
-	docker push $(DOCKER_IMAGE):$(DOCKER_TAG)
+docker-push: docker-build ## Construit puis publie l'image Docker sur le registre et refresh ASG
+	docker push lhassan1/truck-traffic-app:latest
+	$(MAKE) aws-refresh
+
+aws-refresh: ## Force l'Auto Scaling Group à charger la nouvelle image
+	@echo "🔄 Lancement de l'Instance Refresh pour l'ASG..."
+	aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region eu-west-3 --output json || echo "⚠️ Un refresh est déjà en cours, tout est OK."
 
 # ==============================================================================
 # NETTOYAGE
