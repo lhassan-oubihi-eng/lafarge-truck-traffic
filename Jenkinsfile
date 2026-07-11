@@ -23,10 +23,13 @@ pipeline {
                                  string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')]) {
                     sh 'make tf-init'
                     sh 'make tf-validate'
+                    // هنا كنعيطو لـ plan باش يتصاوب ملف tfplan
+                    sh 'make tf-plan'
+                    // هنا كنعيطو لـ apply اللي كيستعمل داك الملف
                     sh 'make tf-apply'
                 }
             }
-        }
+        }	
 
         stage('Docker & AWS Refresh') {
             steps {
