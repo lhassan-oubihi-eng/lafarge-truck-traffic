@@ -55,5 +55,32 @@ pipeline {
                 }
             }
         }
+
+    }
+	post {
+        always {
+            script {
+                def status = currentBuild.currentResult
+                def color = (status == 'SUCCESS') ? '3066993' : '15158332' // لون أخضر للنجاح، أحمر للفشل
+                
+                sh """
+                    curl -H "Content-Type: application/json" \
+                    -X POST \
+                    -d '{
+                        "embeds": [{
+                            "title": "Pipeline Build #${env.BUILD_NUMBER}",
+                            "description": "Status: ${status}",
+                            "url": "${env.BUILD_URL}",
+                            "color": ${color},
+                            "fields": [
+                                {"name": "Project", "value": "lafarge-truck-traffic", "inline": true},
+                                {"name": "Branch", "value": "${env.BRANCH_NAME ?: 'main'}", "inline": true}
+                            ]
+                        }]
+                    }' \
+                    https://discordapp.com/api/webhooks/1525547963554726182/W7xTdsguiYOn5vHla6lfzuJlkohts7FzVdWhBnwsOgIGQoGizZb1MMJba2YxRoYzKGke
+                """
+            }
+        }
     }
 }

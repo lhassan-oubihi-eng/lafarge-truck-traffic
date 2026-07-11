@@ -53,7 +53,7 @@ local-up: ## Lance la stack complète en local
 	@echo "Jenkins      : http://localhost:8081"
 	@echo ""
 	@echo "--- Jenkins Initial Password ---"
-	@sleep 5
+	@sleep 10
 	@docker exec jenkins-local cat /var/jenkins_home/secrets/initialAdminPassword || echo "Jenkins is not ready yet, run 'make get-jenkins-password' later."
 
 # زيد هاد الـ target الجديد باش يلا تعطل Jenkins تقدر تجبد الباسورد بوحدو فـ أي وقت
@@ -135,7 +135,6 @@ docker-build: ## Construit l'image Docker de l'application
 
 docker-push: docker-build ## Construit puis publie l'image Docker sur le registre et refresh ASG
 	docker push lhassan1/truck-traffic-app:latest
-	$(MAKE) aws-refresh
 
 aws-refresh: ## Force l'Auto Scaling Group à charger la nouvelle image
 	@echo "🔄 Lancement de l'Instance Refresh pour l'ASG..."
