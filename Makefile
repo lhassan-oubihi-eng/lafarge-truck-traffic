@@ -77,6 +77,10 @@ local-clean: ## Arrête la stack locale ET supprime les volumes (reset complet)
 app-test: ## Envoie une requête de test à l'application locale (simulation d'entrée camion)
 	curl -X POST "http://localhost:8080/api/trucks/enter?plate=MK-1234-A" ; echo ""
 	curl -s http://localhost:8080/metrics | grep trucks_processed_total
+# نزيدو هاد الـ target للـ Makefile
+test: ## Exécute les tests unitaires avec pytest
+	@echo "Running unit tests..."
+	python3 -m pytest app/tests/
 
 # ==============================================================================
 # BOOTSTRAP - Création du backend S3 + DynamoDB (à lancer UNE SEULE FOIS)
