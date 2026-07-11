@@ -16,14 +16,16 @@ pipeline {
             }
         }
 
-        stage('Terraform') {
+	stage('Terraform') {
             steps {
-                sh 'make tf-init'
-                sh 'make tf-validate'
-                sh 'make tf-apply'
+                // كنعطيو لـ Terraform الـ AWS Credentials اللي كاينين في Jenkins
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
+                    sh 'make tf-init'
+                    sh 'make tf-validate'
+                    sh 'make tf-apply'
+                }
             }
         }
-
         stage('Docker & AWS Refresh') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
