@@ -171,3 +171,4 @@ Pipeline test #2
 Pipeline test #3
 Pipeline test #4
 Pipeline test #5
+Pipeline test #6
