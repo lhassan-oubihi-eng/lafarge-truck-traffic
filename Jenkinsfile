@@ -1,5 +1,12 @@
 pipeline {
-    agent any
+//       ك أننا كنقولو لـ Jenkins: "خدم بهاد الـ Image ديال Python"
+    agent {
+        docker {
+            image 'python:3.11-slim'
+            // خاصنا نثبتو الأدوات لي محتاجين فكل build (أو نوجدو Docker image خاصة بينا)
+            args '-u root' 
+        }
+    }
 
     environment {
         DOCKER_IMAGE     = 'lhassan1/truck-traffic-app:latest'
