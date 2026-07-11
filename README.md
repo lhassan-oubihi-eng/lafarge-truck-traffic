@@ -167,3 +167,4 @@ update de l'ASG → smoke test `/healthz`.
   simplifier le HA de niveau démo).
 Testing Jenkins automation
 Pipeline test #2
+Pipeline test #2
