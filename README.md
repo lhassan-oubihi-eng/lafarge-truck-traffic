@@ -165,3 +165,4 @@ update de l'ASG → smoke test `/healthz`.
 - Ajouter des subnets privés + NAT Gateway si les instances ne doivent pas être
   exposées avec une IP publique directe (actuellement en subnets publics pour
   simplifier le HA de niveau démo).
+Testing Jenkins automation
