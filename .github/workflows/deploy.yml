@@ -70,6 +70,9 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
       - name: Terraform Apply
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+          TF_VAR_db_root_password: ${{ secrets.DB_ROOT_PASSWORD }}
         run: |
           cd terraform
           terraform init
@@ -86,4 +89,4 @@ jobs:
           status: ${{ job.status }}
           title: "Lafarge Pipeline Status"
           description: "Build #${{ github.run_number }} finished with status: ${{ job.status }}"
-          color: ${{ job.status == 'success' && '#00FF00' || '#FF0000' }}
+          color: ${{ job.status == 'success' && '#00FF00' || '#FF0000' }} 

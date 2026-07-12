@@ -86,3 +86,14 @@ variable "tags" {
     Environment = "production"
   }
 }
+variable "db_password" {
+  description = "Password for WordPress database"
+  type        = string
+  sensitive   = true # كيحمي الباسورد باش ما يبانش في الـ Logs
+}
+
+variable "db_root_password" {
+  description = "Root password for MySQL"
+  type        = string
+  sensitive   = true
+}

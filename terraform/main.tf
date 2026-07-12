@@ -270,51 +270,11 @@ resource "aws_launch_template" "app" {
   }
 
   # Script d'amorçage : installe Docker + Node Exporter, puis démarre le conteneur.
-  user_data = base64encode(<<-EOF
-    #!/bin/bash
-    set -e
-    dnf update -y
-
-    # --- Installation et démarrage de Docker ---
-    dnf install -y docker
-    systemctl enable docker
-    systemctl start docker
-    usermod -aG docker ec2-user
-
-    # --- Déploiement du conteneur applicatif ---
-    docker pull ${var.app_docker_image}
-    docker run -d \
-      --name truck-traffic-app \
-      --restart unless-stopped \
-      -p 80:8000 \
-      ${var.app_docker_image}
-
-    # --- Installation de Node Exporter ---
-    NODE_EXPORTER_VERSION="1.8.2"
-    curl -sSL -o /tmp/node_exporter.tar.gz \
-      "https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz"
-    tar -xzf /tmp/node_exporter.tar.gz -C /tmp
-    mv /tmp/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/node_exporter
-    useradd --no-create-home --shell /usr/sbin/nologin node_exporter || true
-
-    cat > /etc/systemd/system/node_exporter.service <<'UNIT'
-    [Unit]
-    Description=Prometheus Node Exporter
-    After=network.target
-
-    [Service]
-    User=node_exporter
-    ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100
-
-    [Install]
-    WantedBy=multi-user.target
-    UNIT
-
-    systemctl daemon-reload
-    systemctl enable node_exporter
-    systemctl start node_exporter
-  EOF
-  )
+  user_data = base64encode(templatefile("${path.module}/user_data.sh.tpl", {
+    app_docker_image = var.app_docker_image
+    db_password      = var.db_password
+    db_root_password = var.db_root_password
+}))
 
   tag_specifications {
     resource_type = "instance"

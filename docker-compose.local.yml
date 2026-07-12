@@ -122,6 +122,27 @@ services:
       - "3000:3000"
     networks:
       - local-net
+      
+ 
+ 
+ 
+  # --------------------------------------------------------------------
+  # SonarQube
+  # --------------------------------------------------------------------
+  sonarqube:
+    image: sonarqube:community
+    container_name: sonarqube-local
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    networks:
+      - local-net
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions   
 
 networks:
   local-net:
@@ -132,3 +153,6 @@ volumes:
   alertmanager_local_data:
   grafana_local_data:
   jenkins_data:
+  sonarqube_data:
+  sonarqube_logs:
+  sonarqube_extensions:
