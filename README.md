@@ -1,4 +1,3 @@
----
 
 # 🚚 Lafarge Truck Traffic Management
 
@@ -98,4 +97,4 @@ Configurez ces variables dans **Settings > Secrets and variables > Actions** :
 
 ---
 
-*Projet développé pour le cycle ingénieur — **ENSA Meknès*** 🎓
+*Projet développé pour le cycle ingénieur — **LHASSAN OUBIHI*** 🎓
