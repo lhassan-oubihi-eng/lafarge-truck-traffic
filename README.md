@@ -1,59 +1,66 @@
-# Lafarge — Truck Traffic Management (IaaS Production)
+# 🚚 Lafarge Truck Traffic Management
+*Infrastructure as Code (IaaS) | CI/CD | High Availability*
 
-Plateforme de gestion du trafic des camions, déployée de manière hautement disponible et automatisée sur AWS, avec un mode local pour le développement.
+---
 
-## Arborescence du projet
+## 🏗️ Architecture Globale
+Bienvenue sur le projet **Lafarge Truck Traffic**. Ce projet implémente une plateforme de gestion du trafic hautement disponible sur **AWS**, entièrement automatisée.
+
+```mermaid
+graph LR
+    A[Internet] --> B(ALB - Load Balancer)
+    B --> C[EC2 Instance 1]
+    B --> D[EC2 Instance 2]
+    C & D --> E[(Auto Scaling Group)]
 ```
+📂 Structure du Projet
+Plaintext
 .
-├── .github/workflows/   # Pipeline CI/CD (GitHub Actions)
-├── app/                 # Code source Python + Dockerfile
-├── jenkins-config/      # Configuration Jenkins (legacy/optionnel)
-├── Makefile             # Raccourcis pour le développement local
-├── monitoring/          # Stack Monitoring (Prometheus/Grafana)
-├── terraform/           # Infrastructure as Code (AWS)
-│   ├── bootstrap/       # Backend S3 + DynamoDB
-│   └── main.tf          # Définition ALB, ASG, EC2
-└── README.md
-```
-Workflow d'utilisation (Comment travailler)
-1. Développement Local (Test)
-Avant de pousser votre code sur le serveur, validez toujours en local :
+├── 🚀 .github/workflows/  # Pipelines CI/CD automatisés
+├── 📦 app/                # Application Python & Dockerfile
+├── 🔧 Makefile            # Commandes rapides (Local)
+├── 📊 monitoring/         # Stack Prometheus & Grafana
+├── 🏗️ terraform/          # Infrastructure AWS (ALB, ASG, VPC)
+└── 📄 README.md
 
-Lancer la stack : make local-up
+⚡ Workflow CI/CD (GitHub Actions)
+Chaque git push sur la branche main déclenche le pipeline suivant :
 
-Exécuter les tests : make test
+Étape,Action,Statut
+Build,Création de l'image Docker,✅
+Push,Publication sur Docker Hub,✅
+Deploy,Mise à jour infra (Terraform),✅
+Refresh,Déploiement sur AWS ASG,✅
+Notify,Alerte Discord,🔔
 
-Arrêter la stack : make local-clean
+🛠️ Comment travailler ?
+1️⃣ Développement Local (Test)
+Avant de déployer, validez vos changements :
 
-2. Automatisation CI/CD (Production AWS)
-Nous utilisons GitHub Actions pour le déploiement. Il n'est plus nécessaire d'intervenir manuellement sur AWS.
+make local-up : Lancer toute la stack en local.
 
-Le cycle de vie du code :
+make test : Exécuter les tests unitaires (pytest).
 
-Code : Vous modifiez le code dans app/ ou l'infrastructure dans terraform/.
+make local-clean : Nettoyer l'environnement.
 
-Commit & Push : git add . && git commit -m "..." && git push origin main.
+2️⃣ Déploiement Cloud (Production)
+Le déploiement est 100% automatisé. Pour déployer :
 
-CI (GitHub Actions) :
+Modifiez votre code.
 
-Docker Job : Build de l'image et push sur Docker Hub.
+git commit -m "Votre message"
 
-Deploy Job : Exécute terraform apply pour mettre à jour l'infrastructure.
+git push origin main
 
-Refresh : Force un instance-refresh sur l'Auto Scaling Group (ASG) pour déployer la nouvelle version sans interruption.
+Vérifiez votre Discord : Vous recevrez une notification de succès ou d'échec en couleur ! 🟢/🔴
 
-Notification : Un message de statut (Succès/Échec) est envoyé automatiquement sur votre canal Discord.
+🔑 Prérequis (Secrets GitHub)
+Pour que la magie opère, configurez ces variables dans Settings > Secrets > Actions :
 
-Prérequis pour le déploiement AWS
-Pour que le pipeline fonctionne, les secrets suivants doivent être configurés dans les Settings > Secrets and variables > Actions de votre repo GitHub :
+🔑 AWS_ACCESS_KEY_ID & AWS_SECRET_ACCESS_KEY
 
-AWS_ACCESS_KEY_ID & AWS_SECRET_ACCESS_KEY
+🐳 DOCKERHUB_USERNAME & DOCKERHUB_TOKEN
 
-DOCKERHUB_USERNAME & DOCKERHUB_TOKEN
+💬 DISCORD_WEBHOOK
 
-DISCORD_WEBHOOK
-
-Infrastructure (Terraform)
-Bootstrap : Le dossier terraform/bootstrap doit être lancé une seule fois pour créer le bucket S3 (stockage du state) et la table DynamoDB (verrouillage).
-
-Main : L'infrastructure principale (VPC, ALB, ASG) est gérée via le dossier terraform/.
+Projet réalisé avec passion par Lhassan Oubihi. 🚀
