@@ -49,8 +49,9 @@ jobs:
 
       - name: Refresh AWS ASG
         run: |
-          aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region eu-west-3
-
+          # كنحاولوا نديرو Refresh، وإيلا كان ديجا كاين (InstanceRefreshInProgress)، كنكملوا عادي بلا ما يوقف الـ Pipeline
+          aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region eu-west-3 || echo "Instance refresh already in progress, skipping..."  
+      
       - name: Discord notification
         if: always()
         uses: sarisia/actions-status-discord@v1
