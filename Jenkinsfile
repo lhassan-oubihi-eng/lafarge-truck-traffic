@@ -30,7 +30,7 @@ pipeline {
         script {
             // تأكدي أن 'SonarScanner' هو الاسم اللي عطيتي للـ Scanner في Global Tools
             def scannerHome = tool 'SonarScanner' 
-            withSonarQubeEnv('SonarQube') { // 'SonarQube' هو اسم السيرفر في Manage Jenkins > System
+            withSonarQubeEnv('SonarScanner) { // 'SonarQube' هو اسم السيرفر في Manage Jenkins > System
                 sh """
                 ${scannerHome}/bin/sonar-scanner \
                 -Dsonar.projectKey=my-project \
