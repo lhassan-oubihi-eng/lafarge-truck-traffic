@@ -1,70 +1,101 @@
+---
+
 # 🚚 Lafarge Truck Traffic Management
-*Infrastructure as Code (IaaS) | CI/CD | High Availability*
+
+*Infrastructure as Code (IaC) | CI/CD | High Availability*
+
+Plateforme de gestion du trafic des camions, déployée de manière hautement disponible, automatisée et monitorée sur **AWS** — avec un mode 100% local pour valider le fonctionnement avant tout déploiement cloud.
 
 ---
 
-## 🏗️ Architecture Globale
-Plateforme de gestion du trafic hautement disponible sur **AWS**.
+## 🏗️ Architecture cible (AWS)
 
 ```mermaid
 graph LR
-    A[Internet] --> B(ALB)
-    B --> C[EC2 Instance]
-    C --> E[Auto Scaling Group]
+    A[Internet] --> B(ALB : 80 HTTP)
+    B --> C[EC2 - Subnet AZ1]
+    B --> D[EC2 - Subnet AZ2]
+    C & D --> E[(Auto Scaling Group)]
+
 ```
-📂 Structure du Projet
-Plaintext
+
+* **Load Balancing :** Application Load Balancer (ALB) sur 2 zones de disponibilité.
+* **Scalabilité :** Auto Scaling Group (min=2 / max=4, target-tracking CPU 60%).
+* **Monitoring :** Stack Prometheus + Alertmanager + Grafana (Instance dédiée).
+* **State Terraform :** Stockage S3 (versionné + chiffré) avec verrouillage DynamoDB.
+
+---
+
+## 📂 Organisation des fichiers
+
+```text
 .
-├── 🚀 .github/workflows/  # Pipelines CI/CD automatisés
-├── 📦 app/                # Application Python & Dockerfile
-├── 🔧 Makefile            # Commandes rapides (Local)
-├── 📊 monitoring/         # Stack Prometheus & Grafana
-├── 🏗️ terraform/          # Infrastructure AWS (ALB, ASG, VPC)
-└── 📄 README.md
+├── 🚀 .github/workflows/   # Pipelines CI/CD (GitHub Actions)
+├── 📦 app/                 # Application Python + Dockerfile
+├── 🔧 Makefile             # Commandes de gestion locale
+├── 📊 monitoring/          # Stack Monitoring (Prometheus/Grafana)
+├── 🏗️ terraform/           # Infrastructure as Code (AWS)
+│   ├── bootstrap/          # Backend S3 + DynamoDB
+│   └── main.tf             # Définition ALB, ASG, EC2
+└── 📄 README.md            # Documentation
 
-⚡ Workflow CI/CD (GitHub Actions)
-Chaque git push déclenche :
+```
 
-Build : Création de l'image Docker ✅
+---
 
-Push : Publication sur Docker Hub ✅
+## ⚡ Workflow CI/CD (GitHub Actions)
 
-Deploy : Mise à jour infra (Terraform) ✅
+Le pipeline est **100% automatisé**. Chaque `push` sur la branche `main` déclenche :
 
-Refresh : Déploiement sur AWS ASG ✅
+1. **Docker Job** : Build de l'image et publication sur Docker Hub.
+2. **Deploy Job** :
+* Exécution de `terraform apply` pour mettre à jour l'infrastructure.
+* Lancement d'un `instance-refresh` sur l'ASG.
 
-Notify : Alerte Discord 🔔
 
+3. **Notification** : Confirmation du statut (Succès/Échec) envoyée en temps réel sur **Discord**.
 
-🛠️ Comment travailler ?
+---
 
-1️⃣ Développement Local (Test)
+## 🛠️ Guide d'utilisation
 
-make local-up : Lancer la stack.
+### 1. Développement Local (Mode Test)
 
-make test : Exécuter les tests.
+Validez toute la chaîne d'observabilité avant le déploiement :
 
-make local-clean : Nettoyer.
+```bash
+make local-up      # Lancer la stack complète
+make test          # Exécuter les tests pytest
+make local-clean   # Nettoyer les volumes et conteneurs
 
-2️⃣ Déploiement Cloud (Production)
+```
 
-Le déploiement est 100% automatisé. Pour déployer :
+### 2. Déploiement AWS (Production)
 
-Modifiez votre code.
+Il n'est plus nécessaire d'exécuter `terraform` manuellement.
 
-git commit -m "Votre message"
+1. **Code :** Modifiez votre application ou votre infrastructure.
+2. **Push :** `git push origin main`.
+3. **Suivi :** Consultez l'onglet **Actions** sur GitHub et vérifiez votre canal **Discord**.
 
-git push origin main
+---
 
-Vérifiez votre Discord : Vous recevrez une notification de succès ou d'échec en couleur ! 🟢/🔴
+## 🔑 Prérequis (Secrets GitHub)
 
-🔑 Prérequis (Secrets GitHub)
-Pour que la magie opère, configurez ces variables dans Settings > Secrets > Actions :
+Configurez ces variables dans **Settings > Secrets and variables > Actions** :
 
-🔑 AWS_ACCESS_KEY_ID & AWS_SECRET_ACCESS_KEY
+* `AWS_ACCESS_KEY_ID` & `AWS_SECRET_ACCESS_KEY`
+* `DOCKERHUB_USERNAME` & `DOCKERHUB_TOKEN`
+* `DISCORD_WEBHOOK`
 
-🐳 DOCKERHUB_USERNAME & DOCKERHUB_TOKEN
+---
 
-💬 DISCORD_WEBHOOK
+## 🚀 Points d'attention
 
-Projet réalisé avec passion par Lhassan Oubihi. 🚀
+* **Sécurité :** Restreindre `admin_cidr_ssh` à un bastion réel. Ne jamais exposer `0.0.0.0/0`.
+* **Production :** Pour une mise en prod réelle, ajouter un certificat SSL (ACM) sur le port 443.
+* **Secrets :** Déplacer les mots de passe sensibles (Grafana, Slack) vers AWS Secrets Manager.
+
+---
+
+*Projet développé pour le cycle ingénieur — **ENSA Meknès*** 🎓
