@@ -4,14 +4,13 @@
 ---
 
 ## 🏗️ Architecture Globale
-Bienvenue sur le projet **Lafarge Truck Traffic**. Ce projet implémente une plateforme de gestion du trafic hautement disponible sur **AWS**, entièrement automatisée.
+Plateforme de gestion du trafic hautement disponible sur **AWS**.
 
 ```mermaid
 graph LR
-    A[Internet] --> B(ALB - Load Balancer)
-    B --> C[EC2 Instance 1]
-    B --> D[EC2 Instance 2]
-    C & D --> E[(Auto Scaling Group)]
+    A[Internet] --> B(ALB)
+    B --> C[EC2 Instance]
+    C --> E[Auto Scaling Group]
 ```
 📂 Structure du Projet
 Plaintext
@@ -24,26 +23,31 @@ Plaintext
 └── 📄 README.md
 
 ⚡ Workflow CI/CD (GitHub Actions)
-Chaque git push sur la branche main déclenche le pipeline suivant :
+Chaque git push déclenche :
 
-Étape,Action,Statut
-Build,Création de l'image Docker,✅
-Push,Publication sur Docker Hub,✅
-Deploy,Mise à jour infra (Terraform),✅
-Refresh,Déploiement sur AWS ASG,✅
-Notify,Alerte Discord,🔔
+Build : Création de l'image Docker ✅
+
+Push : Publication sur Docker Hub ✅
+
+Deploy : Mise à jour infra (Terraform) ✅
+
+Refresh : Déploiement sur AWS ASG ✅
+
+Notify : Alerte Discord 🔔
+
 
 🛠️ Comment travailler ?
+
 1️⃣ Développement Local (Test)
-Avant de déployer, validez vos changements :
 
-make local-up : Lancer toute la stack en local.
+make local-up : Lancer la stack.
 
-make test : Exécuter les tests unitaires (pytest).
+make test : Exécuter les tests.
 
-make local-clean : Nettoyer l'environnement.
+make local-clean : Nettoyer.
 
 2️⃣ Déploiement Cloud (Production)
+
 Le déploiement est 100% automatisé. Pour déployer :
 
 Modifiez votre code.
