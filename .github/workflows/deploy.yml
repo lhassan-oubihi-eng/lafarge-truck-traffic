@@ -50,3 +50,13 @@ jobs:
       - name: Refresh AWS ASG
         run: |
           aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region eu-west-3
+
+      - name: Discord notification
+        if: always()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: ${{ job.status }}
+          title: "Lafarge Pipeline Status"
+          description: "Build #${{ github.run_number }} finished with status: ${{ job.status }}"
+          color: ${{ job.status == 'success' && '#00FF00' || '#FF0000' }}
