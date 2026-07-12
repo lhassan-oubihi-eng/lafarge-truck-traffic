@@ -22,21 +22,21 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
-            steps {
-                script {
-                    def scannerHome = tool 'SonarScanner' 
-                    withSonarQubeEnv('SonarScanner') {
-                        sh """
-                        ${scannerHome}/bin/sonar-scanner \
-                        -Dsonar.projectKey=my-project \
-                        -Dsonar.sources=. \
-                        -Dsonar.host.url=http://sonarqube-local:9000 \
-                        -Dsonar.login=${SONAR_TOKEN}
-                        """
-                    }
-                }
+    steps {
+        script {
+            def scannerHome = tool 'SonarScanner' 
+            withSonarQubeEnv('SonarScanner') {
+                sh """
+                ${scannerHome}/bin/sonar-scanner \
+                -Dsonar.projectKey=my-project \
+                -Dsonar.sources=. \
+                -Dsonar.host.url=http://sonarqube-local:9000 \
+                -Dsonar.token=${SONAR_TOKEN}
+                """
             }
         }
+    }
+}
 
         stage('Terraform') {
             steps {
