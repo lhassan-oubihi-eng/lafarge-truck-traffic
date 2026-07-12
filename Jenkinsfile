@@ -1,6 +1,9 @@
 pipeline {
     agent any
-
+environment {
+        // كنربطو الـ Credential بالمتغير اللي غنستعملو في الكود
+        DISCORD_WEBHOOK_URL = credentials('discord-webhook-url')
+    }
     stages {
         stage('Unit Testing') {
             steps {
