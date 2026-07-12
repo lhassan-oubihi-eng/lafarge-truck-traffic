@@ -2,9 +2,7 @@ pipeline {
     agent any
     
     // تأكدي أن أدوات 'maven' أو 'SonarScanner' معرفة في Global Tool Configuration
-    tools {
-        maven 'maven' 
-    }
+  
     
     environment {
         DISCORD_WEBHOOK_URL = credentials('discord-webhook-url')
