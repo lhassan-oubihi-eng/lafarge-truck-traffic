@@ -1,59 +1,110 @@
-# Lafarge — Truck Traffic Management (IaaS Production)
+# 🚚 Lafarge Truck Traffic Management
+*Infrastructure as Code (IaC) | CI/CD | High Availability*
 
-Plateforme de gestion du trafic des camions, déployée de manière hautement disponible et automatisée sur AWS, avec un mode local pour le développement.
+Plateforme de gestion du trafic des camions, déployée de manière hautement disponible et automatisée sur **AWS**, avec un mode local pour le développement et la validation.
 
-## Arborescence du projet
+---
+
+## 🏗️ Architecture du Projet
+L'application est conteneurisée et déployée sur un **Auto Scaling Group (ASG)** derrière un **Application Load Balancer (ALB)**.
+
+```mermaid
+graph LR
+    A[Internet] --> B(ALB)
+    B --> C[EC2 Instance 1]
+    B --> D[EC2 Instance 2]
+    C & D --> E[(ASG - Multi AZ)]
 ```
+
+---
+
+## 📂 Organisation des fichiers
+
+```text
 .
-├── .github/workflows/   # Pipeline CI/CD (GitHub Actions)
-├── app/                 # Code source Python + Dockerfile
-├── jenkins-config/      # Configuration Jenkins (legacy/optionnel)
-├── Makefile             # Raccourcis pour le développement local
-├── monitoring/          # Stack Monitoring (Prometheus/Grafana)
-├── terraform/           # Infrastructure as Code (AWS)
-│   ├── bootstrap/       # Backend S3 + DynamoDB
-│   └── main.tf          # Définition ALB, ASG, EC2
-└── README.md
+.
+├── app/                        # Code source de l'application
+│   ├── app.py                  # Application principale
+│   ├── Dockerfile              # Configuration Docker de l'app
+│   ├── requirements.txt        # Dépendances Python
+│   └── tests/                  # Tests unitaires
+│       ├── __pycache__/        # Cache Python
+│       └── test_app.py         # Fichier de tests pytest
+├── terraform/                  # Infrastructure as Code (AWS)
+│   ├── bootstrap/              # Configuration backend (S3/DynamoDB)
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   ├── terraform.tfstate
+│   │   ├── terraform.tfstate.backup
+│   │   └── variables.tf
+│   ├── main.tf                 # Définition de l'infra (ALB, ASG, EC2)
+│   ├── outputs.tf              # Sorties Terraform
+│   ├── tfplan                  # Plan d'exécution Terraform
+│   └── variables.tf            # Variables d'infrastructure
+├── monitoring/                 # Stack de monitoring
+│   ├── alertmanager.yml        # Configuration alertes
+│   ├── alert_rules.yml         # Règles d'alerte
+│   ├── docker-compose.yml      # Stack monitoring (Prometheus/Grafana)
+│   ├── prometheus.local.yml    # Config Prometheus mode local
+│   └── prometheus.yml          # Config Prometheus mode prod
+├── jenkins-config/             # Configuration legacy Jenkins
+│   └── Dockerfile
+├── .github/workflows/          # Pipelines CI/CD (GitHub Actions)
+├── docker-compose.local.yml    # Stack locale complète
+├── Jenkinsfile                 # Pipeline CI/CD legacy
+├── Makefile                    # Commandes de développement
+├── README.md                   # Documentation du projet
+├── nul                         # Fichier système
+└── Jenkinsfile                 # Pipeline CI/CD
+
 ```
-Workflow d'utilisation (Comment travailler)
-1. Développement Local (Test)
-Avant de pousser votre code sur le serveur, validez toujours en local :
 
-Lancer la stack : make local-up
+---
 
-Exécuter les tests : make test
+## ⚡ Workflow CI/CD (GitHub Actions)
 
-Arrêter la stack : make local-clean
+Le déploiement est **100% automatisé**. Chaque `push` sur la branche `main` exécute :
 
-2. Automatisation CI/CD (Production AWS)
-Nous utilisons GitHub Actions pour le déploiement. Il n'est plus nécessaire d'intervenir manuellement sur AWS.
+| Étape | Action | Statut |
+| --- | --- | --- |
+| **Build** | Création image Docker | ✅ |
+| **Push** | Publication Docker Hub | ✅ |
+| **Terraform** | Mise à jour infra AWS | ✅ |
+| **Refresh** | Déploiement sur ASG | ✅ |
+| **Notify** | Alerte Discord | 🔔 |
 
-Le cycle de vie du code :
+---
 
-Code : Vous modifiez le code dans app/ ou l'infrastructure dans terraform/.
+## 🛠️ Guide d'utilisation avec `make`
 
-Commit & Push : git add . && git commit -m "..." && git push origin main.
+Pour simplifier votre quotidien, nous utilisons un `Makefile`. Voici les commandes disponibles :
 
-CI (GitHub Actions) :
+### 🖥️ Développement Local
 
-Docker Job : Build de l'image et push sur Docker Hub.
+* `make local-up` : Lance la stack complète (App + Monitoring).
+* `make local-down` : Arrête la stack sans supprimer les données.
+* `make local-clean` : Arrête tout et supprime les volumes (Reset complet).
+* `make app-test` : Simulation d'entrée de camion pour valider les métriques.
+* `make test` : Exécute les tests unitaires avec `pytest`.
 
-Deploy Job : Exécute terraform apply pour mettre à jour l'infrastructure.
+### 🏗️ Infrastructure & AWS
 
-Refresh : Force un instance-refresh sur l'Auto Scaling Group (ASG) pour déployer la nouvelle version sans interruption.
+* `make tf-init` : Initialise Terraform avec le backend S3.
+* `make tf-plan` : Prévisualise les changements sur AWS.
+* `make tf-apply` : Applique les changements d'infrastructure.
+* `make aws-refresh` : Force l'Auto Scaling Group à déployer la dernière image Docker.
 
-Notification : Un message de statut (Succès/Échec) est envoyé automatiquement sur votre canal Discord.
+*(Tapez `make help` dans votre terminal pour voir la liste complète des commandes).*
 
-Prérequis pour le déploiement AWS
-Pour que le pipeline fonctionne, les secrets suivants doivent être configurés dans les Settings > Secrets and variables > Actions de votre repo GitHub :
+---
 
-AWS_ACCESS_KEY_ID & AWS_SECRET_ACCESS_KEY
+## 🔑 Configuration (Secrets GitHub)
 
-DOCKERHUB_USERNAME & DOCKERHUB_TOKEN
+Pour activer le déploiement automatique, configurez ces variables dans **Settings > Secrets > Actions** :
 
-DISCORD_WEBHOOK
+* `AWS_ACCESS_KEY_ID` & `AWS_SECRET_ACCESS_KEY`
+* `DOCKERHUB_USERNAME` & `DOCKERHUB_TOKEN`
+* `DISCORD_WEBHOOK`
 
-Infrastructure (Terraform)
-Bootstrap : Le dossier terraform/bootstrap doit être lancé une seule fois pour créer le bucket S3 (stockage du state) et la table DynamoDB (verrouillage).
+---
 
-Main : L'infrastructure principale (VPC, ALB, ASG) est gérée via le dossier terraform/.
