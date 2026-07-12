@@ -1,14 +1,10 @@
 pipeline {
     agent any
     
-    // تأكدي أن أدوات 'maven' أو 'SonarScanner' معرفة في Global Tool Configuration
-  
-    
     environment {
         DISCORD_WEBHOOK_URL = credentials('discord-webhook-url')
         SONAR_TOKEN = credentials('sonar-token')
-        // اسم السيرفر الذي عرفتيه في Jenkins System
-        SONAR_QUBE_SERVER = 'SonarQube' 
+        SONAR_QUBE_SERVER = 'SonarScanner' 
         AWS_DEFAULT_REGION = 'eu-west-3'
     }
     
@@ -25,23 +21,22 @@ pipeline {
             steps { sh 'trivy fs --skip-db-update --exit-code 1 .' }
         }
 
-       stage('SonarQube Analysis') {
-    steps {
-        script {
-            // تأكدي أن 'SonarScanner' هو الاسم اللي عطيتي للـ Scanner في Global Tools
-            def scannerHome = tool 'SonarScanner' 
-            withSonarQubeEnv('SonarScanner) { // 'SonarQube' هو اسم السيرفر في Manage Jenkins > System
-                sh """
-                ${scannerHome}/bin/sonar-scanner \
-                -Dsonar.projectKey=my-project \
-                -Dsonar.sources=. \
-                -Dsonar.host.url=http://sonarqube-local:9000 \
-                -Dsonar.login=${SONAR_TOKEN}
-                """
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+                    def scannerHome = tool 'SonarScanner' 
+                    withSonarQubeEnv('SonarScanner') {
+                        sh """
+                        ${scannerHome}/bin/sonar-scanner \
+                        -Dsonar.projectKey=my-project \
+                        -Dsonar.sources=. \
+                        -Dsonar.host.url=http://sonarqube-local:9000 \
+                        -Dsonar.login=${SONAR_TOKEN}
+                        """
+                    }
+                }
             }
         }
-    }
-}
 
         stage('Terraform') {
             steps {
