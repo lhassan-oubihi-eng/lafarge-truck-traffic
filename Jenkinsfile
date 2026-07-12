@@ -1,90 +1,110 @@
 pipeline {
     agent any
-environment {
-        // كنربطو الـ Credential بالمتغير اللي غنستعملو في الكود
-        DISCORD_WEBHOOK_URL = credentials('discord-webhook-url')
+    
+    // تأكدي أن أدوات 'maven' أو 'SonarScanner' معرفة في Global Tool Configuration
+    tools {
+        maven 'maven' 
     }
+    
+    environment {
+        DISCORD_WEBHOOK_URL = credentials('discord-webhook-url')
+        SONAR_TOKEN = credentials('sonar-token')
+        // اسم السيرفر الذي عرفتيه في Jenkins System
+        SONAR_QUBE_SERVER = 'SonarQube' 
+        AWS_DEFAULT_REGION = 'eu-west-3'
+    }
+    
     stages {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
         stage('Unit Testing') {
-            steps {
-                // دابا كيعيط لـ make test: اللي زدنا
-                sh 'make test'
-            }
+            steps { sh 'make test' }
         }
 
         stage('Security Scan') {
-            steps {
-                // trivy كيبقى مستقل
-                sh 'trivy fs --exit-code 1 .'
-            }
+            steps { sh 'trivy fs --skip-db-update --exit-code 1 .' }
         }
 
-
-	stage('Terraform') {
-            steps {
-                withCredentials([string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
-                                 string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')]) {
-                    sh 'make tf-init'
-                    sh 'make tf-validate'
-                    // هنا كنعيطو لـ plan باش يتصاوب ملف tfplan
-                    sh 'make tf-plan'
-                    // هنا كنعيطو لـ apply اللي كيستعمل داك الملف
-                    sh 'make tf-apply'
-                }
+       stage('SonarQube Analysis') {
+    steps {
+        script {
+            // تأكدي أن 'SonarScanner' هو الاسم اللي عطيتي للـ Scanner في Global Tools
+            def scannerHome = tool 'SonarScanner' 
+            withSonarQubeEnv('SonarQube') { // 'SonarQube' هو اسم السيرفر في Manage Jenkins > System
+                sh """
+                ${scannerHome}/bin/sonar-scanner \
+                -Dsonar.projectKey=my-project \
+                -Dsonar.sources=. \
+                -Dsonar.host.url=http://sonarqube-local:9000 \
+                -Dsonar.login=${SONAR_TOKEN}
+                """
             }
-        }	
+        }
+    }
+}
 
-	stage('Docker & AWS Refresh') {
+        stage('Terraform') {
             steps {
-                // ندمجو الـ Credentials ديال Docker و AWS في نفس البلوك
                 withCredentials([
-                    usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER'),
                     string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
                     string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
-                    // 1. Login Docker
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-                    
-                    // 2. Push Docker image
-                    sh 'make docker-push'
-                    
-                    // 3. Refresh AWS ASG (مع تمرير الـ Credentials لـ AWS CLI)
                     sh '''
                         export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
                         export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
-                        export AWS_DEFAULT_REGION=eu-west-3
-                        make aws-refresh
+                        make tf-init
+                        make tf-validate
+                        make tf-plan
+                        make tf-apply
                     '''
                 }
             }
         }
 
-    }
-	post {
-    always {
-        script {
-            def status = currentBuild.currentResult
-            def color = (status == 'SUCCESS') ? '3066993' : '15158332'
-            
-            // هنا كنعيطو للمتغير اللي مخبي في Jenkins
-            sh """
-                curl -H "Content-Type: application/json" \
-                -X POST \
-                -d '{
-                    "embeds": [{
-                        "title": "Pipeline Build #${env.BUILD_NUMBER}",
-                        "description": "Status: ${status}",
-                        "url": "${env.BUILD_URL}",
-                        "color": ${color},
-                        "fields": [
-                            {"name": "Project", "value": "lafarge-truck-traffic", "inline": true},
-                            {"name": "Branch", "value": "${env.BRANCH_NAME ?: 'main'}", "inline": true}
-                        ]
-                    }]
-                }' \
-                \$DISCORD_WEBHOOK_URL
-            """
+        stage('Docker & AWS Refresh') {
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER'),
+                    string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                        make docker-push
+                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region $AWS_DEFAULT_REGION
+                    '''
+                }
+            }
         }
     }
-}
+    
+    post {
+        always {
+            script {
+                def status = currentBuild.currentResult
+                def color = (status == 'SUCCESS') ? '3066993' : '15158332'
+                sh """
+                    curl -H "Content-Type: application/json" \
+                    -X POST \
+                    -d '{
+                        "embeds": [{
+                            "title": "Pipeline Build #${env.BUILD_NUMBER}",
+                            "description": "Status: ${status}",
+                            "url": "${env.BUILD_URL}",
+                            "color": ${color},
+                            "fields": [
+                                {"name": "Project", "value": "lafarge-truck-traffic", "inline": true},
+                                {"name": "Branch", "value": "${env.BRANCH_NAME ?: 'main'}", "inline": true}
+                            ]
+                        }]
+                    }' \
+                    $DISCORD_WEBHOOK_URL
+                """
+            }
+        }
+    }
 }
