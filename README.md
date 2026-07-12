@@ -1,8 +1,7 @@
-```markdown
 # 🚚 Lafarge Truck Traffic Management
 *Infrastructure as Code (IaC) | CI/CD | High Availability*
 
-Plateforme de gestion du trafic des camions, déployée de manière hautement disponible sur **AWS** et entièrement pilotable en **local**.
+Plateforme de gestion du trafic des camions, déployée de manière hautement disponible et automatisée sur **AWS**, avec un mode local pour le développement et la validation.
 
 ---
 
@@ -15,7 +14,6 @@ graph LR
     B --> C[EC2 Instance 1]
     B --> D[EC2 Instance 2]
     C & D --> E[(ASG - Multi AZ)]
-
 ```
 
 ---
@@ -24,12 +22,40 @@ graph LR
 
 ```text
 .
-├── 🚀 .github/workflows/  # Pipeline CI/CD (GitHub Actions)
-├── 📦 app/                # Application Python & Dockerfile
-├── 🔧 Makefile            # Commandes de gestion locale & cloud
-├── 📊 monitoring/         # Stack Prometheus & Grafana
-├── 🏗️ terraform/          # Infrastructure AWS (ALB, ASG, VPC)
-└── 📄 README.md           # Documentation
+.
+├── app/                        # Code source de l'application
+│   ├── app.py                  # Application principale
+│   ├── Dockerfile              # Configuration Docker de l'app
+│   ├── requirements.txt        # Dépendances Python
+│   └── tests/                  # Tests unitaires
+│       ├── __pycache__/        # Cache Python
+│       └── test_app.py         # Fichier de tests pytest
+├── terraform/                  # Infrastructure as Code (AWS)
+│   ├── bootstrap/              # Configuration backend (S3/DynamoDB)
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   ├── terraform.tfstate
+│   │   ├── terraform.tfstate.backup
+│   │   └── variables.tf
+│   ├── main.tf                 # Définition de l'infra (ALB, ASG, EC2)
+│   ├── outputs.tf              # Sorties Terraform
+│   ├── tfplan                  # Plan d'exécution Terraform
+│   └── variables.tf            # Variables d'infrastructure
+├── monitoring/                 # Stack de monitoring
+│   ├── alertmanager.yml        # Configuration alertes
+│   ├── alert_rules.yml         # Règles d'alerte
+│   ├── docker-compose.yml      # Stack monitoring (Prometheus/Grafana)
+│   ├── prometheus.local.yml    # Config Prometheus mode local
+│   └── prometheus.yml          # Config Prometheus mode prod
+├── jenkins-config/             # Configuration legacy Jenkins
+│   └── Dockerfile
+├── .github/workflows/          # Pipelines CI/CD (GitHub Actions)
+├── docker-compose.local.yml    # Stack locale complète
+├── Jenkinsfile                 # Pipeline CI/CD legacy
+├── Makefile                    # Commandes de développement
+├── README.md                   # Documentation du projet
+├── nul                         # Fichier système
+└── Jenkinsfile                 # Pipeline CI/CD
 
 ```
 
