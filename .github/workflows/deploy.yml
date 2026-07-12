@@ -25,7 +25,7 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/truck-traffic-app:latest
 
   deploy:
-    needs: docker  # هاد الـ Job ما يخدم حتى يكمل الـ Docker
+    needs: docker
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +36,10 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-west-3
+
+      # زيد هاد الخطوة هنا:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Apply
         run: |
