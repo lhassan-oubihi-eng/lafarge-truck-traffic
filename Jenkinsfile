@@ -38,15 +38,21 @@ pipeline {
     }
 }
 
-        stage('Terraform') {
+stage('Terraform') {
             steps {
                 withCredentials([
                     string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'DB_PASSWORD', variable: 'TF_VAR_db_password'),
+                    string(credentialsId: 'DB_ROOT_PASSWORD', variable: 'TF_VAR_db_root_password')
                 ]) {
                     sh '''
                         export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
                         export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        # هادو غادي يشوفهم Terraform أوتوماتيكياً حيت سميتهم TF_VAR_
+                        export TF_VAR_db_password=$TF_VAR_db_password
+                        export TF_VAR_db_root_password=$TF_VAR_db_root_password
+                        
                         make tf-init
                         make tf-validate
                         make tf-plan
@@ -56,6 +62,7 @@ pipeline {
             }
         }
 
+       
         stage('Docker & AWS Refresh') {
             steps {
                 withCredentials([
