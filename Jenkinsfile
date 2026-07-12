@@ -68,7 +68,7 @@ pipeline {
                         make docker-push
                         export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
                         export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
-                        aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region $AWS_DEFAULT_REGION
+                        aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region $AWS_DEFAULT_REGION || echo "Refresh already in progress, skipping..."
                     '''
                 }
             }
