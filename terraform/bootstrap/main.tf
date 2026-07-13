@@ -71,6 +71,39 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
   restrict_public_buckets = true
 }
 
+# Access logging for the bootstrap state bucket itself, required for audit and Sonar consistency checks.
+resource "aws_s3_bucket_logging" "terraform_state_bootstrap" {
+  bucket        = aws_s3_bucket.terraform_state.id
+  target_bucket = aws_s3_bucket.terraform_state.id
+  target_prefix = "bootstrap-access-logs/"
+}
+
+# Enforce HTTPS-only access to the bootstrap state bucket.
+resource "aws_s3_bucket_policy" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.terraform_state.arn,
+          "${aws_s3_bucket.terraform_state.arn}/*"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      }
+    ]
+  })
+}
+
 resource "aws_s3_bucket" "terraform_state_logs" {
   bucket = "${var.project_name}-terraform-state-logs"
 
@@ -95,37 +128,6 @@ resource "aws_s3_bucket_logging" "terraform_state" {
 
   target_bucket = aws_s3_bucket.terraform_state_logs.id
   target_prefix = "access-logs/"
-}
-
-resource "aws_s3_bucket_logging" "terraform_state_bootstrap" {
-  bucket        = aws_s3_bucket.terraform_state.id
-  target_bucket = aws_s3_bucket.terraform_state.id
-  target_prefix = "bootstrap-access-logs/"
-}
-
-resource "aws_s3_bucket_policy" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "DenyInsecureTransport"
-        Effect    = "Deny"
-        Principal = "*"
-        Action    = "s3:*"
-        Resource = [
-          aws_s3_bucket.terraform_state.arn,
-          "${aws_s3_bucket.terraform_state.arn}/*"
-        ]
-        Condition = {
-          Bool = {
-            "aws:SecureTransport" = "false"
-          }
-        }
-      }
-    ]
-  })
 }
 
 # --------------------------------------------------------------------------
