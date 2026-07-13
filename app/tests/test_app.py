@@ -64,6 +64,18 @@ def test_truck_exit_not_found_returns_404():
     assert response.json()["detail"] == "Camion introuvable"
 
 
+def test_dashboard_shows_truck_row_when_truck_exists():
+    enter_response = client.post("/api/trucks/enter", params={"plate": "ZZZ-999"})
+    assert enter_response.status_code == 200
+    truck_id = enter_response.json()["truck_id"]
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "ZZZ-999" in response.text
+    assert "on_site" in response.text
+    assert truck_id[:8] in response.text
+
+
 def test_truck_exit_already_exited_returns_409():
     enter_response = client.post("/api/trucks/enter", params={"plate": "XYZ-789"})
     truck_id = enter_response.json()["truck_id"]
