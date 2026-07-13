@@ -228,23 +228,46 @@ resource "aws_s3_bucket_public_access_block" "alb_access_logs" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_logging" "alb_access_logs" {
+  bucket        = aws_s3_bucket.alb_access_logs.id
+  target_bucket = aws_s3_bucket.alb_access_logs.id
+  target_prefix = "bucket-access-logs/"
+}
+
 resource "aws_s3_bucket_policy" "alb_access_logs" {
   bucket = aws_s3_bucket.alb_access_logs.id
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Sid       = "AllowALBLogs"
-      Effect    = "Allow"
-      Principal = { Service = "logdelivery.elasticloadbalancing.amazonaws.com" }
-      Action    = "s3:PutObject"
-      Resource  = "${aws_s3_bucket.alb_access_logs.arn}/*"
-      Condition = {
-        StringEquals = {
-          "s3:x-amz-acl" = "bucket-owner-full-control"
+    Statement = [
+      {
+        Sid       = "AllowALBLogs"
+        Effect    = "Allow"
+        Principal = { Service = "logdelivery.elasticloadbalancing.amazonaws.com" }
+        Action    = "s3:PutObject"
+        Resource  = "${aws_s3_bucket.alb_access_logs.arn}/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+          }
+        }
+      },
+      {
+        Sid       = "EnforceHTTPS"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.alb_access_logs.arn,
+          "${aws_s3_bucket.alb_access_logs.arn}/*"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
         }
       }
-    }]
+    ]
   })
 }
 

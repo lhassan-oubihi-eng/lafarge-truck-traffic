@@ -9,8 +9,8 @@ RUN set -eux; \
         awscli \
         ca-certificates \
         curl \
-        gnupg \
         git \
+        gnupg \
         lsb-release \
         make \
         openjdk-21-jre-headless \
