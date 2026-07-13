@@ -32,7 +32,7 @@ pipeline {
                 -Dsonar.sources=. \
                 -Dsonar.host.url=http://sonarqube-local:9000 \
                 -Dsonar.token=${SONAR_TOKEN} \
-                -Dsonar.coverage.exclusions=**/*.tf, terraform/**/*.tf, **/Dockerfile, **/tests/**
+                -Dsonar.coverage.exclusions=**/*.tf,terraform/**/*.tf,**/Dockerfile,**/tests/**
                 """
             }
         }
