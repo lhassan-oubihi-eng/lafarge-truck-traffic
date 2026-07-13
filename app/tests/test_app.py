@@ -1,4 +1,6 @@
 from fastapi.testclient import TestClient
+from unittest.mock import patch
+import runpy
 
 from app.app import APP_VERSION, TRUCKS_REGISTRY, app
 
@@ -55,6 +57,21 @@ def test_truck_enter_and_exit_flow():
     assert exit_response.json()["message"] == "Sortie du camion enregistrée"
     assert TRUCKS_REGISTRY[truck_id]["status"] == "exited"
     assert TRUCKS_REGISTRY[truck_id]["exit_time"] is not None
+
+
+def test_running_app_module_as_main_invokes_uvicorn():
+    with patch("uvicorn.run") as mock_run, patch(
+        "prometheus_client.registry.REGISTRY.register",
+        side_effect=lambda collector: None,
+    ):
+        runpy.run_module("app.app", run_name="__main__")
+
+    mock_run.assert_called_once_with(
+        "app:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+    )
 
 
 def test_truck_exit_not_found_returns_404():
