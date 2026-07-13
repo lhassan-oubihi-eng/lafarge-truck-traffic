@@ -71,6 +71,55 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket" "terraform_state_logs" {
+  bucket = "${var.project_name}-terraform-state-logs"
+
+  tags = {
+    Name      = "${var.project_name}-terraform-state-logs"
+    Project   = var.project_name
+    ManagedBy = "Terraform-Bootstrap"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "terraform_state_logs" {
+  bucket = aws_s3_bucket.terraform_state_logs.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_logging" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
+
+  target_bucket = aws_s3_bucket.terraform_state_logs.id
+  target_prefix = "access-logs/"
+}
+
+resource "aws_s3_bucket_policy" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyInsecureTransport"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource = [
+        aws_s3_bucket.terraform_state.arn,
+        "${aws_s3_bucket.terraform_state.arn}/*"
+      ]
+      Condition = {
+        Bool = {
+          "aws:SecureTransport" = "false"
+        }
+      }
+    }]
+  })
+}
+
 # --------------------------------------------------------------------------
 # Table DynamoDB : verrouillage du state (state locking) pour empêcher
 # deux exécutions Terraform concurrentes (ex : deux builds Jenkins en

@@ -4,7 +4,7 @@ pipeline {
     environment {
         DISCORD_WEBHOOK_URL = credentials('discord-webhook-url')
         SONAR_TOKEN = credentials('sonar-token')
-        SONAR_QUBE_SERVER = 'SonarScanner' 
+        SONAR_SCANNER_NAME = 'SonarScanner'
         AWS_DEFAULT_REGION = 'eu-west-3'
     }
     
@@ -24,8 +24,8 @@ pipeline {
         stage('SonarQube Analysis') {
     steps {
         script {
-            def scannerHome = tool 'SonarScanner' 
-            withSonarQubeEnv('SonarScanner') {
+            def scannerHome = tool env.SONAR_SCANNER_NAME
+            withSonarQubeEnv(env.SONAR_SCANNER_NAME) {
                 sh """
                 ${scannerHome}/bin/sonar-scanner \
                 -Dsonar.projectKey=my-project \

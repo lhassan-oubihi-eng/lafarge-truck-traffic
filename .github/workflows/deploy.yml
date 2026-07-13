@@ -10,9 +10,9 @@ jobs:
   test-and-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c
         with:
           python-version: '3.12'
       - name: Install dependencies
@@ -31,11 +31,11 @@ jobs:
     needs: test-and-scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
@@ -48,10 +48,12 @@ jobs:
     needs: sonarqube
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4  # هادي رجعات هي الأولى هنا باش يلقى الملف
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # هادي رجعات هي الأولى هنا باش يلقى الملف
       - name: Inject Discord Webhook
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          sed -i "s|DISCORD_WEBHOOK_PLACEHOLDER|${{ secrets.DISCORD_WEBHOOK }}|g" monitoring/alertmanager.yml
+          sed -i "s|DISCORD_WEBHOOK_PLACEHOLDER|${DISCORD_WEBHOOK}|g" monitoring/alertmanager.yml
       - name: Login to Docker Hub
         uses: docker/login-action@c66a8fcb2472d4283042d726b2a061b43b3f49ab
         with:
@@ -69,7 +71,7 @@ jobs:
     needs: docker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@9ae780b171afa8c5a3a6a2d154a765b709492482
         with:
@@ -92,7 +94,7 @@ jobs:
 
       - name: Discord notification
         if: always()
-        uses: sarisia/actions-status-discord@v1
+        uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           status: ${{ job.status }}

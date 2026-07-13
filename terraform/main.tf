@@ -115,11 +115,11 @@ resource "aws_security_group" "alb" {
   }
 
   egress {
-    description = "Unlimited outbound traffic to target EC2 instances"
+    description = "Outbound traffic restricted to the VPC"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.vpc_cidr]
   }
 
   tags = merge(var.tags, {
@@ -160,11 +160,11 @@ resource "aws_security_group" "ec2_app" {
   }
 
   egress {
-    description = "Unlimited outbound traffic for system updates and Docker image pulls"
+    description = "Outbound traffic restricted to the VPC"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.vpc_cidr]
   }
 
   tags = merge(var.tags, {
@@ -203,6 +203,43 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 # --------------------------------------------------------------------------
 # Application Load Balancer (public)
 # --------------------------------------------------------------------------
+resource "aws_s3_bucket" "alb_access_logs" {
+  bucket = "${var.project_name}-alb-access-logs"
+
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-alb-access-logs"
+  })
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_access_logs" {
+  bucket = aws_s3_bucket.alb_access_logs.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_policy" "alb_access_logs" {
+  bucket = aws_s3_bucket.alb_access_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowALBLogs"
+      Effect    = "Allow"
+      Principal = { Service = "logdelivery.elasticloadbalancing.amazonaws.com" }
+      Action    = "s3:PutObject"
+      Resource  = "${aws_s3_bucket.alb_access_logs.arn}/*"
+      Condition = {
+        StringEquals = {
+          "s3:x-amz-acl" = "bucket-owner-full-control"
+        }
+      }
+    }]
+  })
+}
+
 resource "aws_lb" "app" {
   name               = "${var.project_name}-alb"
   internal           = false
@@ -211,6 +248,12 @@ resource "aws_lb" "app" {
   subnets            = aws_subnet.public[*].id
 
   enable_deletion_protection = false
+
+  access_logs {
+    enabled = true
+    bucket  = aws_s3_bucket.alb_access_logs.id
+    prefix  = "alb"
+  }
 
   tags = merge(var.tags, {
     Name = "${var.project_name}-alb"
@@ -245,6 +288,23 @@ resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.app.arn
   port               = 80
   protocol           = "HTTP"
+
+  default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.app.arn
+  port               = 443
+  protocol           = "HTTPS"
+  ssl_policy         = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn    = var.certificate_arn
 
   default_action {
     type             = "forward"

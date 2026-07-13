@@ -11,6 +11,7 @@ Expose :
   - GET  /healthz          : Health check utilisé par le Target Group AWS
 """
 
+import os
 import random
 import time
 import uuid
@@ -305,7 +306,13 @@ async def truck_enter(plate: str):
     return {"message": "Camion enregistré", "truck_id": truck_id}
 
 
-@app.post("/api/trucks/exit")
+@app.post(
+    "/api/trucks/exit",
+    responses={
+        404: {"description": "Camion introuvable"},
+        409: {"description": "Camion déjà sorti"},
+    },
+)
 async def truck_exit(truck_id: str):
     truck = TRUCKS_REGISTRY.get(truck_id)
     if not truck:
@@ -325,4 +332,4 @@ async def truck_exit(truck_id: str):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("app:app", host=os.getenv("APP_HOST", "0.0.0.0"), port=8000, reload=False)

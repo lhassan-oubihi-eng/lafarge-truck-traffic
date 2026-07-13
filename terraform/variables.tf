@@ -70,6 +70,12 @@ variable "app_docker_image" {
   default     = "lhassan1/truck-traffic-app:latest"
 }
 
+variable "certificate_arn" {
+  description = "ARN du certificat ACM utilisé par le listener HTTPS du load balancer"
+  type        = string
+  default     = null
+}
+
 variable "admin_cidr_ssh" {
   description = "Bloc CIDR autorisé à se connecter en SSH (22) aux instances pour l'administration/dépannage. À restreindre au VPN/IP du bastion de l'entreprise."
   type        = string
