@@ -123,6 +123,37 @@ resource "aws_s3_bucket_public_access_block" "terraform_state_logs" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_policy" "terraform_state_logs_policy" {
+  bucket = aws_s3_bucket.terraform_state_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.terraform_state_logs.arn,
+          "${aws_s3_bucket.terraform_state_logs.arn}/*"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_s3_bucket_logging" "terraform_state_logs_logging" {
+  bucket        = aws_s3_bucket.terraform_state_logs.id
+  target_bucket = aws_s3_bucket.terraform_state_logs.id
+  target_prefix = "logs-self-audit/"
+}
+
 resource "aws_s3_bucket_logging" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
