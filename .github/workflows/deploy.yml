@@ -33,14 +33,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # مهم بزاف باش Sonar يقدر يحلل الكود كامل
+          fetch-depth: 0
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=my-project
+            -Dsonar.projectKey=lhassan-oubihi-eng_lafarge-truck-traffic
             -Dsonar.organization=lhassan-oubihi-eng
   # Job 3: بناء ورفع Docker
   docker:
