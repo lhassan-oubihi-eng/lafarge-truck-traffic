@@ -97,6 +97,12 @@ resource "aws_s3_bucket_logging" "terraform_state" {
   target_prefix = "access-logs/"
 }
 
+resource "aws_s3_bucket_logging" "terraform_state_bootstrap" {
+  bucket        = aws_s3_bucket.terraform_state.id
+  target_bucket = aws_s3_bucket.terraform_state.id
+  target_prefix = "bootstrap-access-logs/"
+}
+
 resource "aws_s3_bucket_policy" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
