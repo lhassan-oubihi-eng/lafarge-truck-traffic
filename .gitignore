@@ -67,6 +67,8 @@ env/
 .mypy_cache/
 .ruff_cache/
 pip-log.txt
+app/.pip-hashes/
+app/pip_hashes/
 
 # --------------------------------------------------------------------------
 # Docker
