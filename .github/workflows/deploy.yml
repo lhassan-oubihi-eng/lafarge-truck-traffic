@@ -54,6 +54,10 @@ jobs:
           args: >
             -Dsonar.projectKey=lhassan-oubihi-eng_lafarge-truck-traffic
             -Dsonar.organization=lhassan-oubihi-eng
+            -Dsonar.python.version=3.12
+            -Dsonar.sources=app
+            -Dsonar.tests=app/tests
+            -Dsonar.terraform.provider.aws.version=5.0
             -Dsonar.coverage.exclusions=**/*.tf,terraform/**/*.tf,**/Dockerfile,**/tests/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
 
