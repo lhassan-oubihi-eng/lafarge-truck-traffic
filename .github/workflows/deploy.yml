@@ -32,11 +32,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # مهم بزاف باش Sonar يقدر يحلل الكود كامل
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
+        with:
+          args: >
+            -Dsonar.projectKey=my-project
+            -Dsonar.organization=lhassan-oubihi-eng
   # Job 3: بناء ورفع Docker
   docker:
     needs: sonarqube
