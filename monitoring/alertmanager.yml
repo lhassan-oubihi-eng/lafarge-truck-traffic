@@ -25,7 +25,7 @@ route:
 receivers:
   - name: "slack-notifications" # خلي السّمية كيف ما هي باش ما تضطرش تبدلها ف الـ route
     discord_configs:
-      - webhook_url: "***REMOVED***"
+      - webhook_url: "https://discordapp.com/api/webhooks/1523633593908330700/uf-cQ4JS475uav9gYD4bDc8_mQunU4SDuu-UjHZqRoYz7m_6gMOb33Md9l2OlBVXSCXs"
         title: "{{ .CommonAnnotations.summary }}"
         message: |-
           **Statut :** {{ .Status | toUpper }}

@@ -16,11 +16,11 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install pytest
+        run: pip install --only-binary :all: pytest==8.3.2
       - name: Run Tests
         run: pytest app/tests/
       - name: Trivy Scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@c07df6fec6fa692e6fd1200d50aaa1fdd66f03c8
         with:
           scan-type: 'fs'
           exit-code: '1'
@@ -35,26 +35,30 @@ jobs:
         with:
           fetch-depth: 0
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
             -Dsonar.projectKey=lhassan-oubihi-eng_lafarge-truck-traffic
             -Dsonar.organization=lhassan-oubihi-eng
+
   # Job 3: بناء ورفع Docker
   docker:
     needs: sonarqube
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4  # هادي رجعات هي الأولى هنا باش يلقى الملف
+      - name: Inject Discord Webhook
+        run: |
+          sed -i "s|DISCORD_WEBHOOK_PLACEHOLDER|${{ secrets.DISCORD_WEBHOOK }}|g" monitoring/alertmanager.yml
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@c66a8fcb2472d4283042d726b2a061b43b3f49ab
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@cb941d0b895b09c17fa011d41c411b33c752cf28
         with:
           context: ./app
           push: true
@@ -67,13 +71,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@9ae780b171afa8c5a3a6a2d154a765b709492482
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: eu-west-3
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@37c3618610d60f92cc57cb7f7e74c2569db0fcd6
       - name: Terraform Apply
         env:
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
@@ -88,10 +92,10 @@ jobs:
 
       - name: Discord notification
         if: always()
-        uses: sarisia/actions-status-discord@v1
+        uses: sarisia/actions-status-discord@4f4322cb1878ec4400fcf6a10315d2169a90877d
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           status: ${{ job.status }}
           title: "Lafarge Pipeline Status"
           description: "Build #${{ github.run_number }} finished with status: ${{ job.status }}"
-          color: ${{ job.status == 'success' && '#00FF00' || '#FF0000' }} 
+          color: ${{ job.status == 'success' && '#00FF00' || '#FF0000' }}
