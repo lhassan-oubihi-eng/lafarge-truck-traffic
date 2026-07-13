@@ -42,6 +42,7 @@ jobs:
           args: >
             -Dsonar.projectKey=lhassan-oubihi-eng_lafarge-truck-traffic
             -Dsonar.organization=lhassan-oubihi-eng
+            -Dsonar.coverage.exclusions=**/*.tf, terraform/**/*.tf, **/Dockerfile, **/tests/**
 
   # Job 3: بناء ورفع Docker
   docker:
