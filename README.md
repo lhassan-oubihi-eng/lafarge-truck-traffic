@@ -123,11 +123,4 @@ make aws-refresh    # Safely triggers an AWS Instance Refresh
 - **Encadrant**: Mr. SAAD FOUTOUHI
 - **Academic Year**: 2025-2026
 
-### Executing Git Automation:
-After overwriting README.md completely, run these commands in the terminal immediately:
 
-git add README.md
-
-git commit -m "docs: sync README configuration with true Makefile endpoints and fixed text layouts"
-
-git push origin main
