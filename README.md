@@ -117,10 +117,5 @@ make docker-push    # Builds image and pushes to registry
 make aws-refresh    # Safely triggers an AWS Instance Refresh
 ```
 
-## 👥 Project Contributors & Supervision
-
-- **Fait par**: Lhassan OUBIHI
-- **Encadrant**: Mr. SAAD FOUTOUHI
-- **Academic Year**: 2025-2026
 
 
