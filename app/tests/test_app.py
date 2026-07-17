@@ -89,7 +89,7 @@ def test_dashboard_shows_truck_row_when_truck_exists():
     response = client.get("/")
     assert response.status_code == 200
     assert "ZZZ-999" in response.text
-    assert "on_site" in response.text
+    assert "On Site" in response.text
     assert truck_id[:8] in response.text
 
 
