@@ -7,14 +7,15 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 import boto3
 from botocore.exceptions import ClientError, EndpointConnectionError
 
 
-ENDPOINT_URL = "http://localhost:4566"
-REGION = "us-east-1"
-DEFAULT_BUCKET = "truck-traffic-logs"
+ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL", "http://localhost:4566")
+REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+DEFAULT_BUCKET = os.getenv("LOGS_BUCKET_NAME", "truck-traffic-logs")
 
 
 def list_buckets(s3):
@@ -70,8 +71,8 @@ def main():
         "s3",
         endpoint_url=ENDPOINT_URL,
         region_name=REGION,
-        aws_access_key_id="test",
-        aws_secret_access_key="test",
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
     )
 
     if args.list_all:

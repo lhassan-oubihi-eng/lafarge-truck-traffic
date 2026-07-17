@@ -85,31 +85,38 @@ def get_secret_safely(secret_name: str) -> dict:
 
 @lru_cache(maxsize=1)
 def load_runtime_secrets() -> dict:
-    """Load and resolve runtime secrets from AWS Secrets Manager or environment."""
+    """Load and resolve runtime secrets from AWS Secrets Manager or environment.
+
+    Raises:
+        RuntimeError: If a required environment variable is missing.
+    """
     db_secret_name = os.getenv("DB_SECRET_NAME", "lafarge/truck-traffic/local/db")
     aws_secret_name = os.getenv("AWS_SECRET_NAME", "lafarge/truck-traffic/local/aws")
 
     db_secret = get_secret_safely(db_secret_name)
     aws_secret = get_secret_safely(aws_secret_name)
 
+    def _require(key: str, source: dict | None = None) -> str:
+        """Get value from source dict or env, raise if missing."""
+        if source and key in source:
+            return source[key]
+        value = os.getenv(key)
+        if value is None:
+            raise RuntimeError(f"Required environment variable '{key}' is not set")
+        return value
+
     resolved = {
-        "DB_HOST": db_secret.get("DB_HOST", os.getenv("DB_HOST", "postgres")),
-        "DB_PORT": db_secret.get("DB_PORT", os.getenv("DB_PORT", "5432")),
-        "DB_NAME": db_secret.get("DB_NAME", os.getenv("DB_NAME", "lafarge")),
-        "DB_USER": db_secret.get("DB_USER", os.getenv("DB_USER", "postgres")),
-        "DB_PASSWORD": db_secret.get(
-            "DB_PASSWORD", os.getenv("DB_PASSWORD", "postgres")
-        ),
-        "AWS_ACCESS_KEY_ID": aws_secret.get(
-            "AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", "test")
-        ),
-        "AWS_SECRET_ACCESS_KEY": aws_secret.get(
-            "AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", "test")
-        ),
+        "DB_HOST": _require("DB_HOST", db_secret),
+        "DB_PORT": _require("DB_PORT", db_secret),
+        "DB_NAME": _require("DB_NAME", db_secret),
+        "DB_USER": _require("DB_USER", db_secret),
+        "DB_PASSWORD": _require("DB_PASSWORD", db_secret),
+        "AWS_ACCESS_KEY_ID": _require("AWS_ACCESS_KEY_ID", aws_secret),
+        "AWS_SECRET_ACCESS_KEY": _require("AWS_SECRET_ACCESS_KEY", aws_secret),
     }
 
     for key, value in resolved.items():
-        os.environ.setdefault(key, value)
+        os.environ[key] = value
 
     return resolved
 
