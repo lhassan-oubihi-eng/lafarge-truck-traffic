@@ -103,4 +103,3 @@ def test_truck_exit_already_exited_returns_409():
     second_exit = client.post("/api/trucks/exit", params={"truck_id": truck_id})
     assert second_exit.status_code == 409
     assert second_exit.json()["detail"] == "Camion déjà sorti"
-

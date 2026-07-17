@@ -1,5 +1,6 @@
 # --------------------------------------------------------------------------
-# Image de production pour l'application Lafarge Truck Traffic Management
+# Local Development Image for Lafarge Truck Traffic Management
+# Relaxed security constraints for rapid local development
 # --------------------------------------------------------------------------
 FROM python:3.12-slim
 
@@ -9,12 +10,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Installation des dépendances (couche mise en cache séparément du code)
+# Installation des dépendances (local: no hash requirement for flexibility)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copie du code applicatif
+# Copie du code applicatif (app.py + services package)
 COPY app.py .
+COPY services/ ./services/
 
 # Utilisateur non-root pour la sécurité
 RUN useradd --create-home appuser

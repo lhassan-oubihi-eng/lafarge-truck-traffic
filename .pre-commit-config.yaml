@@ -1,0 +1,16 @@
+# ---------------------------------------------------------------------------
+# Windows note: both pre-commit-hooks and astral-sh/ruff repos contain a
+# branch named "charlie/con" which triggers a Windows reserved-name error
+# (con.lock). Only black and detect-secrets are used here; ruff is run via
+# the Makefile / CI.
+# ---------------------------------------------------------------------------
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
