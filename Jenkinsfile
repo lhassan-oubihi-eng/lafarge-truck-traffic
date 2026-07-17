@@ -6,6 +6,7 @@ pipeline {
         SONAR_TOKEN = credentials('sonar-token')
         SONAR_SCANNER_NAME = 'SonarScanner'
         AWS_DEFAULT_REGION = 'eu-west-3'
+        AWS_ENDPOINT_URL = 'http://localstack:4566'
     }
     
     stages {
@@ -13,8 +14,22 @@ pipeline {
             steps { checkout scm }
         }
 
+        stage('Code Quality') {
+            steps {
+                sh 'pip install pre-commit'
+                sh 'pre-commit run --all-files'
+            }
+        }
+
         stage('Unit Testing') {
             steps { sh 'make test' }
+        }
+
+        stage('Security Scan - Bandit') {
+            steps {
+                sh 'pip install bandit'
+                sh 'bandit -r app/ -ll'
+            }
         }
 
         stage('Security Scan') {

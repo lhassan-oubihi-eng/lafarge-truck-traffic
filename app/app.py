@@ -11,13 +11,18 @@ Expose :
   - GET  /healthz          : Health check utilisé par le Target Group AWS
 """
 
+import json
 import os
 import random
 import time
 import uuid
+import logging
 from datetime import datetime, timezone
+from functools import lru_cache
 
-from fastapi import FastAPI, Request, Response, HTTPException
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+from fastapi import BackgroundTasks, FastAPI, Request, Response, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from prometheus_client import (
     Counter,
@@ -27,10 +32,116 @@ from prometheus_client import (
     CONTENT_TYPE_LATEST,
 )
 
+logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------------------------------
+# S3 Service (LocalStack) – lazy import to avoid boto3 requirement at
+# module load time (important for unit tests running without boto3).
+# Works both inside the Docker container (services.s3_service) and
+# from the host / test runner (app.services.s3_service).
+# --------------------------------------------------------------------------
+def _get_s3_service():
+    try:
+        from services.s3_service import s3_service  # Docker container
+
+        return s3_service
+    except ModuleNotFoundError:
+        from app.services.s3_service import s3_service  # Host / CI
+
+        return s3_service
+
+
 APP_NAME = "lafarge-truck-traffic"
 APP_VERSION = "1.0.0"
 
 app = FastAPI(title="Lafarge Truck Traffic Management", version=APP_VERSION)
+
+
+# --------------------------------------------------------------------------
+# AWS Secrets Manager Integration
+# --------------------------------------------------------------------------
+def get_secret_safely(secret_name: str) -> dict:
+    """Retrieve a secret from AWS Secrets Manager or LocalStack with fallback."""
+    region_name = os.getenv("AWS_REGION", "us-east-1")
+    client_kwargs = {"region_name": region_name}
+
+    endpoint_url = os.getenv("AWS_ENDPOINT_URL")
+    if endpoint_url:
+        client_kwargs["endpoint_url"] = endpoint_url
+
+    try:
+        session = boto3.session.Session()
+        client = session.client("secretsmanager", **client_kwargs)
+        response = client.get_secret_value(SecretId=secret_name)
+        secret_string = response.get("SecretString", "{}")
+        return json.loads(secret_string)
+    except (BotoCoreError, ClientError) as e:
+        logger.warning(
+            f"Could not retrieve secret '{secret_name}': {e}. Using local fallback environment variables."
+        )
+        return {}
+
+
+@lru_cache(maxsize=1)
+def load_runtime_secrets() -> dict:
+    """Load and resolve runtime secrets from AWS Secrets Manager or environment."""
+    db_secret_name = os.getenv("DB_SECRET_NAME", "lafarge/truck-traffic/local/db")
+    aws_secret_name = os.getenv("AWS_SECRET_NAME", "lafarge/truck-traffic/local/aws")
+
+    db_secret = get_secret_safely(db_secret_name)
+    aws_secret = get_secret_safely(aws_secret_name)
+
+    resolved = {
+        "DB_HOST": db_secret.get("DB_HOST", os.getenv("DB_HOST", "postgres")),
+        "DB_PORT": db_secret.get("DB_PORT", os.getenv("DB_PORT", "5432")),
+        "DB_NAME": db_secret.get("DB_NAME", os.getenv("DB_NAME", "lafarge")),
+        "DB_USER": db_secret.get("DB_USER", os.getenv("DB_USER", "postgres")),
+        "DB_PASSWORD": db_secret.get(
+            "DB_PASSWORD", os.getenv("DB_PASSWORD", "postgres")
+        ),
+        "AWS_ACCESS_KEY_ID": aws_secret.get(
+            "AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", "test")
+        ),
+        "AWS_SECRET_ACCESS_KEY": aws_secret.get(
+            "AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", "test")
+        ),
+    }
+
+    for key, value in resolved.items():
+        os.environ.setdefault(key, value)
+
+    return resolved
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize runtime configuration on application startup."""
+    load_runtime_secrets()
+    # Restore Prometheus metrics from S3 so they survive a container restart.
+    try:
+        s3 = _get_s3_service()
+        logs = s3.list_truck_logs()
+        entry_count = sum(1 for t in logs if t.get("event") == "truck_entry")
+        exit_count = sum(1 for t in logs if t.get("event") == "truck_exit")
+        on_site = entry_count - exit_count
+        if on_site < 0:
+            on_site = 0
+        TRUCKS_ON_SITE.set(on_site)
+        TRUCKS_PROCESSED_TOTAL.labels(operation="entry")._inc(entry_count)
+        TRUCKS_PROCESSED_TOTAL.labels(operation="exit")._inc(exit_count)
+        logger.info(
+            "Restored metrics from S3: %d entries, %d exits, %d on site",
+            entry_count,
+            exit_count,
+            on_site,
+        )
+    except Exception:
+        logger.info(
+            "S3 not available at startup; metrics start at zero (expected in CI)."
+        )
+    logger.info(f"{APP_NAME} v{APP_VERSION} started successfully")
+
 
 # --------------------------------------------------------------------------
 # Métriques Prometheus
@@ -104,18 +215,26 @@ async def prometheus_middleware(request: Request, call_next):
 # --------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard() -> HTMLResponse:
-    trucks_count = len(TRUCKS_REGISTRY)
+    s3 = _get_s3_service()
+    logs = s3.list_truck_logs()
+    trucks_count = len(logs)
     trucks_on_site_count = sum(
-        1 for t in TRUCKS_REGISTRY.values() if t["status"] == "on_site"
+        1 for t in logs if t.get("event") == "truck_entry" and not t.get("exit_time")
     )
     trucks_rows = ""
-    for truck_id, data in list(TRUCKS_REGISTRY.items())[-10:][::-1]:
+    for entry in logs[-10:][::-1]:
+        truck_id = entry.get("truck_id", "N/A")
+        plate = entry.get("license_plate", "N/A")
+        event = entry.get("event", "unknown")
+        event_time = entry.get("event_time", "N/A")
+        status_label = "On Site" if event == "truck_entry" else "Exited"
+        status_class = "status-onsite" if event == "truck_entry" else "status-exited"
         trucks_rows += f"""
         <tr>
             <td>{truck_id[:8]}</td>
-            <td>{data['plate']}</td>
-            <td>{data['status']}</td>
-            <td>{data['entry_time']}</td>
+            <td>{plate}</td>
+            <td class="{status_class}">{status_label}</td>
+            <td>{event_time}</td>
         </tr>"""
 
     if not trucks_rows:
@@ -282,17 +401,20 @@ async def metrics():
 # --------------------------------------------------------------------------
 @app.get("/api/trucks")
 async def list_trucks():
-    return JSONResponse(content=list(TRUCKS_REGISTRY.values()))
+    s3 = _get_s3_service()
+    logs = s3.list_truck_logs()
+    return JSONResponse(content=logs)
 
 
 @app.post("/api/trucks/enter")
-async def truck_enter(plate: str):
+async def truck_enter(plate: str, background_tasks: BackgroundTasks):
     truck_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
     TRUCKS_REGISTRY[truck_id] = {
         "id": truck_id,
         "plate": plate,
         "status": "on_site",
-        "entry_time": datetime.now(timezone.utc).isoformat(),
+        "entry_time": now_iso,
         "exit_time": None,
     }
 
@@ -302,6 +424,26 @@ async def truck_enter(plate: str):
 
     TRUCKS_PROCESSED_TOTAL.labels(operation="entry").inc()
     TRUCKS_ON_SITE.inc()
+
+    # --- Background upload to LocalStack S3 ---
+    log_payload = {
+        "event": "truck_entry",
+        "truck_id": truck_id,
+        "license_plate": plate,
+        "event_time": now_iso,
+        "gate_id": "GATE-A",
+        "status": "APPROVED",
+    }
+    date_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    object_key = f"traffic_logs/{date_prefix}/{truck_id}_{int(time.time())}.json"
+
+    s3 = _get_s3_service()
+    background_tasks.add_task(
+        s3.upload_json,
+        object_key,
+        json.dumps(log_payload, indent=2),
+    )
+    logger.info("Scheduled S3 upload for truck entry: %s", object_key)
 
     return {"message": "Camion enregistré", "truck_id": truck_id}
 
@@ -313,18 +455,54 @@ async def truck_enter(plate: str):
         409: {"description": "Camion déjà sorti"},
     },
 )
-async def truck_exit(truck_id: str):
-    truck = TRUCKS_REGISTRY.get(truck_id)
-    if not truck:
-        raise HTTPException(status_code=404, detail="Camion introuvable")
-    if truck["status"] == "exited":
+async def truck_exit(truck_id: str, background_tasks: BackgroundTasks):
+    s3 = _get_s3_service()
+    logs = s3.list_truck_logs()
+
+    # Look for the truck's entry log in S3 (event == "truck_entry")
+    truck_logs = [t for t in logs if t.get("truck_id") == truck_id]
+    entry_log = next((t for t in truck_logs if t.get("event") == "truck_entry"), None)
+    exit_log = next((t for t in truck_logs if t.get("event") == "truck_exit"), None)
+
+    if exit_log:
         raise HTTPException(status_code=409, detail="Camion déjà sorti")
 
-    truck["status"] = "exited"
-    truck["exit_time"] = datetime.now(timezone.utc).isoformat()
+    if entry_log:
+        plate = entry_log["license_plate"]
+        entry_time = entry_log["event_time"]
+    else:
+        # Fallback: check in-memory registry (only works for current session)
+        truck = TRUCKS_REGISTRY.get(truck_id)
+        if not truck:
+            raise HTTPException(status_code=404, detail="Camion introuvable")
+        plate = truck["plate"]
+        entry_time = truck["entry_time"]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
 
     TRUCKS_PROCESSED_TOTAL.labels(operation="exit").inc()
     TRUCKS_ON_SITE.dec()
+
+    # --- Background upload to LocalStack S3 ---
+    log_payload = {
+        "event": "truck_exit",
+        "truck_id": truck_id,
+        "license_plate": plate,
+        "entry_time": entry_time,
+        "exit_time": now_iso,
+        "gate_id": "GATE-A",
+        "status": "COMPLETED",
+    }
+    date_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    object_key = f"traffic_logs/{date_prefix}/{truck_id}_{int(time.time())}.json"
+
+    s3 = _get_s3_service()
+    background_tasks.add_task(
+        s3.upload_json,
+        object_key,
+        json.dumps(log_payload, indent=2),
+    )
+    logger.info("Scheduled S3 upload for truck exit: %s", object_key)
 
     return {"message": "Sortie du camion enregistrée", "truck_id": truck_id}
 
@@ -332,4 +510,6 @@ async def truck_exit(truck_id: str):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host=os.getenv("APP_HOST", "0.0.0.0"), port=8000, reload=False)
+    uvicorn.run(
+        "app:app", host=os.getenv("APP_HOST", "0.0.0.0"), port=8000, reload=False
+    )

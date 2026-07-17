@@ -58,7 +58,30 @@ Once up, you can access the infrastructure services at:
 > make get-jenkins-password
 > ```
 
-### 2. Testing & Local Simulation
+### 2. Development Setup
+
+**Recommended:** Use `make local-up` to start the project. It automatically handles all environment setup — no manual `pip install` or `pre-commit install` needed.
+
+```bash
+make local-up
+```
+
+The Makefile uses a sentinel file (`.installed`) to install dependencies only when `requirements.txt` changes. On subsequent runs, the setup is skipped automatically.
+
+#### Manual fallback (if not using the Makefile)
+
+```bash
+pip install -r requirements.txt
+pre-commit install
+```
+
+The `pre-commit` hooks will automatically run on every `git commit` and enforce:
+- YAML validity
+- Trailing whitespace / EOF cleanup
+- Black code formatting
+- Ruff linting
+
+### 3. Testing & Local Simulation
 Bash
 
 ```
@@ -69,7 +92,7 @@ make test
 make app-test
 ```
 
-### 3. Local Stack Shutdown
+### 4. Local Stack Shutdown
 Bash
 
 ```

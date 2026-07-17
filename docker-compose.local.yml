@@ -1,16 +1,48 @@
 
+version: '3.8'
+
 services:
+  # --------------------------------------------------------------------
+  # LocalStack Mock AWS Services
+  # --------------------------------------------------------------------
+  localstack:
+    image: localstack/localstack:3.7
+    container_name: localstack-local
+    restart: unless-stopped
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=secretsmanager,s3,rds
+      - DEBUG=0
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - ./localstack-init:/etc/localstack/init/ready.d
+    networks:
+      - local-net
+
   # --------------------------------------------------------------------
   # Application Truck Traffic Management
   # --------------------------------------------------------------------
   app:
     build:
       context: ./app
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.local
     container_name: truck-traffic-app-local
     restart: unless-stopped
+    depends_on:
+      - localstack
     ports:
       - "8080:8000"
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - DB_SECRET_NAME=lafarge/truck-traffic/local/db
+      - AWS_SECRET_NAME=lafarge/truck-traffic/local/aws
     networks:
       - local-net
     healthcheck:
@@ -149,6 +181,7 @@ networks:
     driver: bridge
 
 volumes:
+  localstack_data:
   prometheus_local_data:
   alertmanager_local_data:
   grafana_local_data:
