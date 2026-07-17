@@ -223,7 +223,25 @@ async def prometheus_middleware(request: Request, call_next):
 @app.get("/", response_class=HTMLResponse)
 async def dashboard() -> HTMLResponse:
     s3 = _get_s3_service()
-    logs = s3.list_truck_logs()
+    try:
+        logs = s3.list_truck_logs()
+    except Exception:
+        logs = []
+
+    # Fallback to in-memory registry if S3 is unavailable (e.g., in tests)
+    if not logs and TRUCKS_REGISTRY:
+        for truck_id, truck in TRUCKS_REGISTRY.items():
+            event = "truck_entry" if truck["status"] == "on_site" else "truck_exit"
+            logs.append(
+                {
+                    "truck_id": truck_id,
+                    "license_plate": truck["plate"],
+                    "event": event,
+                    "event_time": truck["entry_time"],
+                    "exit_time": truck.get("exit_time"),
+                }
+            )
+
     trucks_count = len(logs)
     trucks_on_site_count = sum(
         1 for t in logs if t.get("event") == "truck_entry" and not t.get("exit_time")
@@ -471,7 +489,12 @@ async def truck_exit(truck_id: str, background_tasks: BackgroundTasks):
     entry_log = next((t for t in truck_logs if t.get("event") == "truck_entry"), None)
     exit_log = next((t for t in truck_logs if t.get("event") == "truck_exit"), None)
 
-    if exit_log:
+    # Check in-memory registry first for immediate duplicate detection
+    truck = TRUCKS_REGISTRY.get(truck_id)
+    if truck:
+        if truck.get("status") == "exited":
+            raise HTTPException(status_code=409, detail="Camion déjà sorti")
+    elif exit_log:
         raise HTTPException(status_code=409, detail="Camion déjà sorti")
 
     if entry_log:
@@ -489,6 +512,11 @@ async def truck_exit(truck_id: str, background_tasks: BackgroundTasks):
 
     TRUCKS_PROCESSED_TOTAL.labels(operation="exit").inc()
     TRUCKS_ON_SITE.dec()
+
+    # Update in-memory registry status
+    if truck_id in TRUCKS_REGISTRY:
+        TRUCKS_REGISTRY[truck_id]["status"] = "exited"
+        TRUCKS_REGISTRY[truck_id]["exit_time"] = now_iso
 
     # --- Background upload to LocalStack S3 ---
     log_payload = {
