@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration – reads from environment variables set in docker-compose
 # ---------------------------------------------------------------------------
-ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL", "http://localstack:4566")
+ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL")
 AWS_REGION = os.getenv("AWS_DEFAULT_REGION", os.getenv("AWS_REGION", "us-east-1"))
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "mock")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "mock")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 BUCKET_NAME = os.getenv("LOGS_BUCKET_NAME", "truck-traffic-logs")
 
 
