@@ -31,6 +31,9 @@ from prometheus_client import (
     generate_latest,
     CONTENT_TYPE_LATEST,
 )
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,13 @@ APP_NAME = "lafarge-truck-traffic"
 APP_VERSION = "1.0.0"
 
 app = FastAPI(title="Lafarge Truck Traffic Management", version=APP_VERSION)
+
+# --------------------------------------------------------------------------
+# Rate Limiting Configuration
+# --------------------------------------------------------------------------
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # --------------------------------------------------------------------------
@@ -432,6 +442,7 @@ async def list_trucks():
 
 
 @app.post("/api/trucks/enter")
+@limiter.limit("10/minute")
 async def truck_enter(plate: str, background_tasks: BackgroundTasks):
     truck_id = str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -480,6 +491,7 @@ async def truck_enter(plate: str, background_tasks: BackgroundTasks):
         409: {"description": "Camion déjà sorti"},
     },
 )
+@limiter.limit("10/minute")
 async def truck_exit(truck_id: str, background_tasks: BackgroundTasks):
     s3 = _get_s3_service()
     logs = s3.list_truck_logs()
