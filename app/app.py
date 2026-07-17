@@ -443,7 +443,7 @@ async def list_trucks():
 
 @app.post("/api/trucks/enter")
 @limiter.limit("10/minute")
-async def truck_enter(plate: str, background_tasks: BackgroundTasks):
+async def truck_enter(request: Request, plate: str, background_tasks: BackgroundTasks):
     truck_id = str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
     TRUCKS_REGISTRY[truck_id] = {
@@ -492,7 +492,9 @@ async def truck_enter(plate: str, background_tasks: BackgroundTasks):
     },
 )
 @limiter.limit("10/minute")
-async def truck_exit(truck_id: str, background_tasks: BackgroundTasks):
+async def truck_exit(
+    request: Request, truck_id: str, background_tasks: BackgroundTasks
+):
     s3 = _get_s3_service()
     logs = s3.list_truck_logs()
 
