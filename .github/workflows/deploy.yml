@@ -107,7 +107,7 @@ jobs:
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
           TF_VAR_db_root_password: ${{ secrets.DB_ROOT_PASSWORD }}
           TF_VAR_certificate_arn: ${{ secrets.ACM_CERTIFICATE_ARN }}
-          TF_VAR_public_key_content: ${{ secrets.EC2_PUBLIC_KEY }}
+          TF_VAR_public_key_content: ${{ secrets.AWS_PUBLIC_KEY }}
         run: |
           cd terraform
           terraform init

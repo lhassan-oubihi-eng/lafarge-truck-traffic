@@ -65,9 +65,14 @@ variable "key_pair_name" {
 }
 
 variable "public_key_content" {
-  description = "Contenu de la clé publique SSH (string) passée via GitHub Secrets. Utilisée par aws_key_pair dans eu-west-3."
+  description = "Contenu de la clé publique SSH (string) passée via GitHub Secrets (AWS_PUBLIC_KEY). Utilisée par aws_key_pair dans eu-west-3."
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = length(var.public_key_content) > 0
+    error_message = "public_key_content is empty. Verify the AWS_PUBLIC_KEY secret is set in GitHub Actions and contains a valid SSH public key (e.g., 'ssh-rsa AAAA...')."
+  }
 }
 
 variable "app_docker_image" {
