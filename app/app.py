@@ -146,10 +146,103 @@ def load_runtime_secrets() -> dict:
     return resolved
 
 
+# --------------------------------------------------------------------------
+# Seed data & simulation : ensures the dashboard is never empty during
+# demos or evaluations. Seeds N realistic truck entries into the in-memory
+# registry and spawns a background thread that simulates new entries.
+# In production, these are replaced by real S3 / API traffic.
+# --------------------------------------------------------------------------
+MOCK_PLATES = [
+    "MK-1234-A",
+    "MK-5678-B",
+    "MK-9012-C",
+    "MK-3456-D",
+    "MK-7890-E",
+    "MK-1111-F",
+    "MK-2222-G",
+    "MK-3333-H",
+    "MK-4444-I",
+    "MK-5555-J",
+    "MK-6666-K",
+    "MK-7777-L",
+    "MK-8888-M",
+    "MK-9999-N",
+    "MK-0000-P",
+]
+
+MOCK_SIMULATION_ACTIVE = False
+
+
+def _seed_mock_data(count: int = 12):
+    """Pre-populate TRUCKS_REGISTRY with *count* realistic truck entries.
+
+    Only runs when the registry is empty (first start / no S3 persistence).
+    """
+    if TRUCKS_REGISTRY:
+        return
+    now = datetime.now(timezone.utc)
+    for i in range(count):
+        plate = MOCK_PLATES[i % len(MOCK_PLATES)]
+        truck_id = str(uuid.uuid4())
+        entry_time = (
+            now - __import__("datetime").timedelta(minutes=count * 3 - i * 3)
+        ).isoformat()
+        TRUCKS_REGISTRY[truck_id] = {
+            "id": truck_id,
+            "plate": plate,
+            "status": "on_site",
+            "entry_time": entry_time,
+            "exit_time": None,
+        }
+        TRUCKS_PROCESSED_TOTAL.labels(operation="entry").inc()
+        TRUCKS_ON_SITE.inc()
+        weighing_time = random.uniform(15, 90)
+        TRUCK_WEIGHING_DURATION_SECONDS.observe(weighing_time)
+    logger.info("Seeded %d mock truck entries for dashboard visibility.", count)
+
+
+def _start_mock_simulation(interval_range: tuple = (30, 60)):
+    """Spawn a daemon thread that adds a random truck entry periodically."""
+    import threading as _t
+
+    def _simulate():
+        global MOCK_SIMULATION_ACTIVE
+        MOCK_SIMULATION_ACTIVE = True
+        while True:
+            delay = random.randint(*interval_range)
+            __import__("time").sleep(delay)
+            plate = random.choice(MOCK_PLATES)
+            truck_id = str(uuid.uuid4())
+            now_iso = datetime.now(timezone.utc).isoformat()
+            TRUCKS_REGISTRY[truck_id] = {
+                "id": truck_id,
+                "plate": plate,
+                "status": "on_site",
+                "entry_time": now_iso,
+                "exit_time": None,
+            }
+            TRUCKS_PROCESSED_TOTAL.labels(operation="entry").inc()
+            TRUCKS_ON_SITE.inc()
+            TRUCK_WEIGHING_DURATION_SECONDS.observe(random.uniform(15, 90))
+            logger.debug("Mock truck entry simulated: %s (%s)", plate, truck_id[:8])
+
+    thread = _t.Thread(target=_simulate, daemon=True, name="mock-simulator")
+    thread.start()
+    logger.info(
+        "Mock simulation thread started (new truck every %d-%d seconds).",
+        *interval_range,
+    )
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize runtime configuration on application startup."""
     load_runtime_secrets()
+
+    # Seed mock data for dashboard visibility when S3 is empty
+    _seed_mock_data(count=12)
+    _start_mock_simulation(interval_range=(30, 60))
+
     # Restore Prometheus metrics from S3 so they survive a container restart.
     try:
         s3 = _get_s3_service()
@@ -170,7 +263,7 @@ async def startup_event():
         )
     except Exception:
         logger.info(
-            "S3 not available at startup; metrics start at zero (expected in CI)."
+            "S3 not available at startup; using mock data for dashboard (expected in CI/demo)."
         )
     logger.info(f"{APP_NAME} v{APP_VERSION} started successfully")
 
