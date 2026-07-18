@@ -168,11 +168,11 @@ resource "aws_security_group" "ec2_app" {
   }
 
   egress {
-    description = "Outbound traffic restricted to the VPC"
+    description = "Allow all outbound traffic (Docker pulls, package updates, API calls)"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = [var.vpc_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = merge(var.tags, {
