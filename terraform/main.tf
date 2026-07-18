@@ -203,6 +203,40 @@ resource "aws_iam_role_policy_attachment" "ssm_managed" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+resource "aws_iam_role_policy" "ec2_app" {
+  name = "${var.project_name}-ec2-app-policy"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "S3Access"
+        Effect = "Allow"
+        Action = [
+          "s3:HeadBucket",
+          "s3:CreateBucket",
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket",
+        ]
+        Resource = [
+          "arn:aws:s3:::truck-traffic-logs",
+          "arn:aws:s3:::truck-traffic-logs/*",
+        ]
+      },
+      {
+        Sid    = "SecretsManagerAccess"
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          "arn:aws:secretsmanager:${var.aws_region}:*:secret:lafarge/truck-traffic/*",
+        ]
+      },
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "${var.project_name}-ec2-instance-profile"
   role = aws_iam_role.ec2_role.name

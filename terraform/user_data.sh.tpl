@@ -66,8 +66,7 @@ services:
       - DB_USER=wp_user
       - DB_PASSWORD=${db_password}
     depends_on:
-      mysql-db:
-        condition: service_healthy
+      - mysql-db
 
 volumes:
   mysql_data:

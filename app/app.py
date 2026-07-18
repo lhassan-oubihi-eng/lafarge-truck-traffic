@@ -22,6 +22,7 @@ from datetime import datetime, timezone, timedelta
 from functools import lru_cache
 
 import boto3
+from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import BackgroundTasks, FastAPI, Request, Response, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -96,9 +97,10 @@ def get_secret_safely(secret_name: str) -> dict:
     if endpoint_url:
         client_kwargs["endpoint_url"] = endpoint_url
 
+    boto_config = BotoConfig(connect_timeout=5, read_timeout=5)
     try:
         session = boto3.session.Session()
-        client = session.client("secretsmanager", **client_kwargs)
+        client = session.client("secretsmanager", config=boto_config, **client_kwargs)
         response = client.get_secret_value(SecretId=secret_name)
         secret_string = response.get("SecretString", "{}")
         return json.loads(secret_string)

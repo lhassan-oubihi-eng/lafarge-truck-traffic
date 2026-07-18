@@ -10,6 +10,7 @@ import os
 import logging
 
 import boto3
+from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
@@ -28,10 +29,12 @@ class S3Service:
     """Thin wrapper around a boto3 S3 client pre-configured for LocalStack."""
 
     def __init__(self):
+        boto_config = BotoConfig(connect_timeout=5, read_timeout=5)
         client_kwargs = {
             "service_name": "s3",
             "endpoint_url": ENDPOINT_URL,
             "region_name": AWS_REGION,
+            "config": boto_config,
         }
         if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
             client_kwargs["aws_access_key_id"] = AWS_ACCESS_KEY_ID
