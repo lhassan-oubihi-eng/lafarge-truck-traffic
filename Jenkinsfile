@@ -1,14 +1,15 @@
 pipeline {
     agent any
-    
+
     environment {
         DISCORD_WEBHOOK_URL = credentials('discord-webhook-url')
         SONAR_TOKEN = credentials('sonar-token')
         SONAR_SCANNER_NAME = 'SonarScanner'
         AWS_DEFAULT_REGION = 'eu-west-3'
         AWS_ENDPOINT_URL = 'http://localstack:4566'
+        // BUILD_NUMBER is already exported by Jenkins; Makefile picks it up for Docker tagging
     }
-    
+
     stages {
         stage('Checkout') {
             steps { checkout scm }
@@ -21,40 +22,57 @@ pipeline {
             }
         }
 
-        stage('Unit Testing') {
-            steps { sh 'make test' }
-        }
+        stage('Tests & Security Scans') {
+            parallel {
+                stage('Unit Testing') {
+                    steps { sh 'make test' }
+                }
 
-        stage('Security Scan - Bandit') {
-            steps {
-                sh 'pip install bandit'
-                sh 'bandit -r app/ -ll'
+                stage('Security Scan - Bandit') {
+                    steps {
+                        sh 'pip install bandit'
+                        sh 'bandit -r app/ -ll'
+                    }
+                }
+
+                stage('Security Scan - Trivy') {
+                    steps { sh 'trivy fs --skip-db-update --exit-code 1 .' }
+                }
             }
-        }
-
-        stage('Security Scan') {
-            steps { sh 'trivy fs --skip-db-update --exit-code 1 .' }
         }
 
         stage('SonarQube Analysis') {
-    steps {
-        script {
-            def scannerHome = tool env.SONAR_SCANNER_NAME
-            withSonarQubeEnv(env.SONAR_SCANNER_NAME) {
-                sh """
-                ${scannerHome}/bin/sonar-scanner \
-                -Dsonar.projectKey=my-project \
-                -Dsonar.sources=. \
-                -Dsonar.host.url=http://sonarqube-local:9000 \
-                -Dsonar.token=${SONAR_TOKEN} \
-                -Dsonar.coverage.exclusions=**/*.tf,terraform/**/*.tf,**/Dockerfile,**/tests/**
-                """
+            steps {
+                script {
+                    // Health check: wait for SonarQube to be ready
+                    sh '''
+                        echo "Waiting for SonarQube to be ready..."
+                        for i in $(seq 1 30); do
+                            if curl -sf "http://sonarqube-local:9000/api/system/health" > /dev/null 2>&1; then
+                                echo "SonarQube is ready!"
+                                break
+                            fi
+                            echo "Attempt $i/30 - SonarQube not ready yet, sleeping 5s..."
+                            sleep 5
+                        done
+                    '''
+
+                    def scannerHome = tool env.SONAR_SCANNER_NAME
+                    withSonarQubeEnv(env.SONAR_SCANNER_NAME) {
+                        sh """
+                        ${scannerHome}/bin/sonar-scanner \
+                        -Dsonar.projectKey=my-project \
+                        -Dsonar.sources=. \
+                        -Dsonar.host.url=http://sonarqube-local:9000 \
+                        -Dsonar.token=${SONAR_TOKEN} \
+                        -Dsonar.coverage.exclusions=**/*.tf,terraform/**/*.tf,**/Dockerfile,**/tests/**
+                        """
+                    }
+                }
             }
         }
-    }
-}
 
-stage('Terraform') {
+        stage('Terraform') {
             steps {
                 withCredentials([
                     string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
@@ -65,20 +83,19 @@ stage('Terraform') {
                     sh '''
                         export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
                         export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
-                        # هادو غادي يشوفهم Terraform أوتوماتيكياً حيت سميتهم TF_VAR_
                         export TF_VAR_db_password=$TF_VAR_db_password
                         export TF_VAR_db_root_password=$TF_VAR_db_root_password
-                        
+                        export TF_VAR_app_docker_image=lhassan1/truck-traffic-app:${BUILD_NUMBER}
+
                         make tf-init
                         make tf-validate
                         make tf-plan
-                        make tf-apply
+                        make tf-apply-force
                     '''
                 }
             }
         }
 
-       
         stage('Docker & AWS Refresh') {
             steps {
                 withCredentials([
@@ -88,7 +105,7 @@ stage('Terraform') {
                 ]) {
                     sh '''
                         echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                        make docker-push
+                        make docker-push-hash
                         export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
                         export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
                         aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region $AWS_DEFAULT_REGION || echo "Refresh already in progress, skipping..."
@@ -97,7 +114,7 @@ stage('Terraform') {
             }
         }
     }
-    
+
     post {
         always {
             script {

@@ -14,15 +14,15 @@ s3-archive-apply: ## Actually delete old S3 logs (older than 7 days)
 
 .DEFAULT_GOAL := help
 
-# --- Configuration système ---
+# --- Configuration système (Cross-platform: Linux / Windows / Git Bash) ---
 ifeq ($(OS),Windows_NT)
-    # إعدادات خاصة بـ Windows
     RM_CMD = powershell -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"
     TOUCH_CMD = powershell -Command "New-Item -ItemType File -Force"
+    CD_CMD = cd /d
 else
-    # إعدادات Linux / Git Bash
     RM_CMD = rm -rf
     TOUCH_CMD = touch
+    CD_CMD = cd
 endif
 
 # --- Variables ---
@@ -31,13 +31,17 @@ TERRAFORM_DIR       := terraform
 BOOTSTRAP_DIR       := terraform/bootstrap
 LOCAL_COMPOSE_FILE  := docker-compose.local.yml
 DOCKER_IMAGE        := lhassan1/truck-traffic-app
-DOCKER_TAG          := latest
+
+# GIT_HASH: short commit hash, fallback to 'unknown' if git unavailable
+GIT_HASH := $(shell git rev-parse --short HEAD 2>nul || git rev-parse --short HEAD 2>/dev/null || echo unknown)
+# Docker tag: use BUILD_NUMBER (Jenkins) if set, else GIT_HASH, else 'latest'
+DOCKER_TAG          := $(or $(BUILD_NUMBER),$(GIT_HASH),latest)
 
 .PHONY: help local-setup local-up local-down local-restart local-logs local-ps \
         local-clean get-jenkins-password app-test test \
         bootstrap-init bootstrap-plan bootstrap-apply bootstrap-destroy \
-        tf-init tf-fmt tf-validate tf-plan tf-apply tf-destroy tf-output \
-        docker-build docker-push aws-refresh clean
+        tf-init tf-fmt tf-validate tf-plan tf-apply tf-apply-force tf-destroy tf-output \
+        docker-build docker-push docker-build-hash docker-push-hash aws-refresh clean
 
 ## --- AIDE ---
 ## --- AIDE ---
@@ -84,31 +88,45 @@ test: ## Exécute les tests pytest
 # BOOTSTRAP & TERRAFORM
 # ==============================================================================
 bootstrap-init: ## Init Bootstrap
-	cd $(BOOTSTRAP_DIR) && terraform init
+	$(CD_CMD) $(BOOTSTRAP_DIR) && terraform init
 
 bootstrap-apply: ## Applique Bootstrap
-	cd $(BOOTSTRAP_DIR) && terraform apply
+	$(CD_CMD) $(BOOTSTRAP_DIR) && terraform apply
 
 tf-init: ## Init Terraform
-	cd $(TERRAFORM_DIR) && terraform init
+	$(CD_CMD) $(TERRAFORM_DIR) && terraform init
+
+tf-validate: ## Validate Terraform
+	$(CD_CMD) $(TERRAFORM_DIR) && terraform validate
 
 tf-plan: ## Plan Terraform
-	cd $(TERRAFORM_DIR) && terraform plan -out=tfplan
+	$(CD_CMD) $(TERRAFORM_DIR) && terraform plan -out=tfplan
 
-tf-apply: ## Applique Terraform
-	cd $(TERRAFORM_DIR) && terraform apply tfplan
+tf-apply: ## Applique Terraform (requires manual approval)
+	$(CD_CMD) $(TERRAFORM_DIR) && terraform apply tfplan
+
+tf-apply-force: ## Applique Terraform avec -auto-approve (CI/CD)
+	$(CD_CMD) $(TERRAFORM_DIR) && terraform apply -auto-approve
 
 tf-destroy: ## Détruit l'infrastructure
-	cd $(TERRAFORM_DIR) && terraform destroy
+	$(CD_CMD) $(TERRAFORM_DIR) && terraform destroy
 
 # ==============================================================================
 # DOCKER & UTILITAIRES
 # ==============================================================================
-docker-build: ## Build image
-	cd $(APP_DIR) && docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+docker-build: ## Build image with tag 'latest'
+	$(CD_CMD) $(APP_DIR) && docker build -t $(DOCKER_IMAGE):latest .
 
-docker-push: docker-build ## Push image
+docker-push: docker-build ## Push image with tag 'latest'
+	docker push $(DOCKER_IMAGE):latest
+
+docker-build-hash: ## Build image with GIT_HASH / BUILD_NUMBER tag
+	$(CD_CMD) $(APP_DIR) && docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+
+docker-push-hash: docker-build-hash ## Push image with GIT_HASH / BUILD_NUMBER tag
+	docker tag $(DOCKER_IMAGE):$(DOCKER_TAG) $(DOCKER_IMAGE):latest
 	docker push $(DOCKER_IMAGE):$(DOCKER_TAG)
+	docker push $(DOCKER_IMAGE):latest
 
 aws-refresh: ## Refresh ASG
 	aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region eu-west-3
@@ -118,6 +136,6 @@ aws-refresh: ## Refresh ASG
 	$(TOUCH_CMD) .installed
 
 clean: local-clean ## Nettoyage complet
-	$(RM_CMD) ./**/__pycache__
+	$(RM_CMD) __pycache__
 	$(RM_CMD) $(TERRAFORM_DIR)/tfplan
 	@echo "Nettoyage terminé."
