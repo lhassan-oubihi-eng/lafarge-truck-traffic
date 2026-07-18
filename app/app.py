@@ -15,9 +15,10 @@ import json
 import os
 import random
 import time
+import threading
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import lru_cache
 
 import boto3
@@ -184,9 +185,7 @@ def _seed_mock_data(count: int = 12):
     for i in range(count):
         plate = MOCK_PLATES[i % len(MOCK_PLATES)]
         truck_id = str(uuid.uuid4())
-        entry_time = (
-            now - __import__("datetime").timedelta(minutes=count * 3 - i * 3)
-        ).isoformat()
+        entry_time = (now - timedelta(minutes=count * 3 - i * 3)).isoformat()
         TRUCKS_REGISTRY[truck_id] = {
             "id": truck_id,
             "plate": plate,
@@ -203,14 +202,13 @@ def _seed_mock_data(count: int = 12):
 
 def _start_mock_simulation(interval_range: tuple = (30, 60)):
     """Spawn a daemon thread that adds a random truck entry periodically."""
-    import threading as _t
 
     def _simulate():
         global MOCK_SIMULATION_ACTIVE
         MOCK_SIMULATION_ACTIVE = True
         while True:
             delay = random.randint(*interval_range)
-            __import__("time").sleep(delay)
+            time.sleep(delay)
             plate = random.choice(MOCK_PLATES)
             truck_id = str(uuid.uuid4())
             now_iso = datetime.now(timezone.utc).isoformat()
@@ -226,7 +224,7 @@ def _start_mock_simulation(interval_range: tuple = (30, 60)):
             TRUCK_WEIGHING_DURATION_SECONDS.observe(random.uniform(15, 90))
             logger.debug("Mock truck entry simulated: %s (%s)", plate, truck_id[:8])
 
-    thread = _t.Thread(target=_simulate, daemon=True, name="mock-simulator")
+    thread = threading.Thread(target=_simulate, daemon=True, name="mock-simulator")
     thread.start()
     logger.info(
         "Mock simulation thread started (new truck every %d-%d seconds).",

@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copie du code applicatif
 COPY app.py .
+COPY services/ ./services/
 
 # Utilisateur non-root pour la sécurité
 RUN useradd --create-home appuser
