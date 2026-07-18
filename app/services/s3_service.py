@@ -28,13 +28,15 @@ class S3Service:
     """Thin wrapper around a boto3 S3 client pre-configured for LocalStack."""
 
     def __init__(self):
-        self.s3 = boto3.client(
-            "s3",
-            endpoint_url=ENDPOINT_URL,
-            region_name=AWS_REGION,
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        )
+        client_kwargs = {
+            "service_name": "s3",
+            "endpoint_url": ENDPOINT_URL,
+            "region_name": AWS_REGION,
+        }
+        if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+            client_kwargs["aws_access_key_id"] = AWS_ACCESS_KEY_ID
+            client_kwargs["aws_secret_access_key"] = AWS_SECRET_ACCESS_KEY
+        self.s3 = boto3.client(**client_kwargs)
         self._bucket = BUCKET_NAME
         self._ensure_bucket_exists()
 

@@ -59,6 +59,12 @@ services:
     restart: unless-stopped
     ports:
       - "80:8000"
+    environment:
+      - DB_HOST=mysql-db
+      - DB_PORT=3306
+      - DB_NAME=wp
+      - DB_USER=wp_user
+      - DB_PASSWORD=${db_password}
     depends_on:
       mysql-db:
         condition: service_healthy

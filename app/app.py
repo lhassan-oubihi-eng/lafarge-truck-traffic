@@ -137,9 +137,18 @@ def load_runtime_secrets() -> dict:
         "DB_NAME": _require("DB_NAME", db_secret),
         "DB_USER": _require("DB_USER", db_secret),
         "DB_PASSWORD": _require("DB_PASSWORD", db_secret),
-        "AWS_ACCESS_KEY_ID": _require("AWS_ACCESS_KEY_ID", aws_secret),
-        "AWS_SECRET_ACCESS_KEY": _require("AWS_SECRET_ACCESS_KEY", aws_secret),
     }
+
+    aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+    aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    if aws_access_key and aws_secret_key:
+        resolved["AWS_ACCESS_KEY_ID"] = aws_access_key
+        resolved["AWS_SECRET_ACCESS_KEY"] = aws_secret_key
+    else:
+        logger.info(
+            "AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY not set — "
+            "boto3 will use default credential chain (IAM role, etc.)"
+        )
 
     for key, value in resolved.items():
         os.environ[key] = value
