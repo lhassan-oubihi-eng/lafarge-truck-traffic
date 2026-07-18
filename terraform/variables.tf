@@ -65,7 +65,7 @@ variable "key_pair_name" {
 }
 
 variable "app_docker_image" {
-  description = "Image Docker de l'application publiée sur le registre (Docker Hub ou ECR), construite et poussée par le pipeline Jenkins"
+  description = "Image Docker de l'application publiée sur le registre (Docker Hub ou ECR), construite et poussée par le pipeline Jenkins. Surchargée dynamiquement via TF_VAR_app_docker_image dans le pipeline CI/CD avec le tag BUILD_NUMBER ou GIT_HASH."
   type        = string
   default     = "lhassan1/truck-traffic-app:latest"
 }

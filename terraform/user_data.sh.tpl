@@ -1,49 +1,84 @@
 #!/bin/bash
 set -e
 
-# تحديث النظام وتثبيت Docker
+# =============================================================================
+# Bootstrap: system update & Docker installation
+# =============================================================================
 dnf update -y
-dnf install -y docker
+dnf install -y docker docker-compose-plugin
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ec2-user
 
-# تشغيل التطبيق الأساسي (Truck Traffic)
-docker run -d \
-  --name truck-traffic-app \
-  --restart unless-stopped \
-  -p 80:8000 \
-  ${app_docker_image}
+# =============================================================================
+# Docker Compose: orchestre l'application, MySQL et WordPress
+# Utiliser docker-compose plutôt que des docker run individuels permet :
+#   - Un démarrage ordonné via depends_on
+#   - Un réseau partagé automatique (pas de --link déprécié)
+#   - Une gestion unifiée des redémarrages et des logs
+# =============================================================================
+cat > /opt/docker-compose.yml <<'COMPOSE'
+version: "3.9"
 
-# تشغيل قاعدة بيانات MySQL
-docker run -d \
-  --name mysql-db \
-  -e MYSQL_ROOT_PASSWORD=${db_root_password} \
-  -e MYSQL_DATABASE=wp \
-  -e MYSQL_USER=wp_user \
-  -e MYSQL_PASSWORD=${db_password} \
-  -v mysql_data:/var/lib/mysql \
-  mysql:8.0
+services:
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${db_root_password}
+      MYSQL_DATABASE: wp
+      MYSQL_USER: wp_user
+      MYSQL_PASSWORD: ${db_password}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-# تشغيل WordPress وربطه بـ MySQL
-docker run -d \
-  --name wordpress \
-  --link mysql-db:mysql \
-  -p 8080:80 \
-  -e WORDPRESS_DB_HOST=mysql \
-  -e WORDPRESS_DB_USER=wp_user \
-  -e WORDPRESS_DB_PASSWORD=${db_password} \
-  -e WORDPRESS_DB_NAME=wp \
-  wordpress:latest
+  wordpress:
+    image: wordpress:latest
+    container_name: wordpress
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: mysql-db
+      WORDPRESS_DB_USER: wp_user
+      WORDPRESS_DB_PASSWORD: ${db_password}
+      WORDPRESS_DB_NAME: wp
+    depends_on:
+      mysql-db:
+        condition: service_healthy
 
-# تثبيت Node Exporter للمراقبة (Monitoring)
+  truck-traffic-app:
+    image: ${app_docker_image}
+    container_name: truck-traffic-app
+    restart: unless-stopped
+    ports:
+      - "80:8000"
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+COMPOSE
+
+# Démarrage de tous les services via docker-compose
+docker compose -f /opt/docker-compose.yml up -d
+
+# =============================================================================
+# Node Exporter : monitoring Prometheus (hors Docker pour accès direct host)
+# =============================================================================
 NODE_EXPORTER_VERSION="1.8.2"
 curl -sSL -o /tmp/node_exporter.tar.gz \
   "https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz"
 tar -xzf /tmp/node_exporter.tar.gz -C /tmp
 mv /tmp/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/node_exporter
 
-# إنشاء خدمة Node Exporter
 cat > /etc/systemd/system/node_exporter.service <<'UNIT'
 [Unit]
 Description=Prometheus Node Exporter
