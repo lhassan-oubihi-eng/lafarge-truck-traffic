@@ -59,9 +59,15 @@ variable "asg_desired_capacity" {
 }
 
 variable "key_pair_name" {
-  description = "Nom de la paire de clés EC2 (SSH) existante dans le compte AWS, utilisée pour l'accès de dépannage aux instances"
+  description = "Nom de la paire de clés EC2 créée par Terraform dans eu-west-3 (Paris), utilisée pour l'accès de dépannage aux instances via SSH"
   type        = string
   default     = "lafarge-devops-keypair"
+}
+
+variable "public_key_path" {
+  description = "Chemin local vers la clé publique SSH à importer dans eu-west-3. Par défaut : ~/.ssh/id_rsa.pub"
+  type        = string
+  default     = "~/.ssh/id_rsa.pub"
 }
 
 variable "app_docker_image" {

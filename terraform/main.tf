@@ -344,10 +344,24 @@ resource "aws_lb_listener" "https" {
 # --------------------------------------------------------------------------
 # Launch Template : configuration des instances EC2 applicatives
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# Key Pair : import dans eu-west-3 (Paris) pour l'accès SSH aux instances
+# --------------------------------------------------------------------------
+resource "aws_key_pair" "app" {
+  key_name   = var.key_pair_name
+  public_key = file(var.public_key_path)
+
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-keypair"
+  })
+}
+
+
 resource "aws_launch_template" "app" {
   name_prefix   = "${var.project_name}-lt-"
   image_id      = data.aws_ami.amazon_linux.id
   instance_type = var.instance_type
+  key_name      = aws_key_pair.app.key_name
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
