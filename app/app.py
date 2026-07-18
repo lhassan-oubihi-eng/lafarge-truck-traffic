@@ -244,89 +244,10 @@ async def prometheus_middleware(request: Request, call_next):
 
 # --------------------------------------------------------------------------
 # Route : Dashboard HTML — Operations Control Center
+# All data is fetched client-side from /api/metrics for live updates.
 # --------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard() -> HTMLResponse:
-    s3 = _get_s3_service()
-    monitoring = _get_monitoring_service()
-
-    try:
-        logs = s3.list_truck_logs()
-    except Exception:
-        logs = []
-
-    # Fallback to in-memory registry if S3 is unavailable (e.g., in tests)
-    if not logs and TRUCKS_REGISTRY:
-        for truck_id, truck in TRUCKS_REGISTRY.items():
-            event = "truck_entry" if truck["status"] == "on_site" else "truck_exit"
-            logs.append(
-                {
-                    "truck_id": truck_id,
-                    "license_plate": truck["plate"],
-                    "event": event,
-                    "event_time": truck["entry_time"],
-                    "exit_time": truck.get("exit_time"),
-                }
-            )
-
-    # --- Business metrics ---
-    trucks_count = len(logs)
-    trucks_on_site_count = sum(
-        1 for t in logs if t.get("event") == "truck_entry" and not t.get("exit_time")
-    )
-    entries_today = sum(1 for t in logs if t.get("event") == "truck_entry")
-    exits_today = sum(1 for t in logs if t.get("event") == "truck_exit")
-
-    # --- Platform metrics ---
-    system = monitoring.get_system_status()
-    traffic_history = monitoring.get_traffic_history()
-
-    # Health colour classes for progress bars
-    def _health_class(val):
-        if val > 85:
-            return "danger"
-        if val > 65:
-            return "warning"
-        return "green"
-
-    cpu_class = _health_class(system["cpu_usage_percent"])
-    mem_class = _health_class(system["memory_usage_percent"])
-    overall_color = (
-        "var(--success)"
-        if system["overall_status"] == "healthy"
-        else (
-            "var(--warning)"
-            if system["overall_status"] == "degraded"
-            else "var(--danger)"
-        )
-    )
-
-    # --- Recent movements table rows ---
-    trucks_rows = ""
-    for entry in logs[-10:][::-1]:
-        truck_id = entry.get("truck_id", "N/A")
-        plate = entry.get("license_plate", "N/A")
-        event = entry.get("event", "unknown")
-        event_time = entry.get("event_time", "N/A")
-        status_label = "On Site" if event == "truck_entry" else "Exited"
-        status_class = "status-onsite" if event == "truck_entry" else "status-exited"
-        trucks_rows += f"""
-        <tr>
-            <td><span class="mono">{truck_id[:8]}</span></td>
-            <td>{plate}</td>
-            <td><span class="badge {status_class}">{status_label}</span></td>
-            <td class="mono">{event_time}</td>
-        </tr>"""
-
-    if not trucks_rows:
-        trucks_rows = (
-            "<tr><td colspan='4' class='empty'>No trucks recorded yet</td></tr>"
-        )
-
-    # --- Traffic history JSON for Chart.js ---
-    import json as _json
-
-    traffic_json = _json.dumps(traffic_history)
 
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -336,9 +257,6 @@ async def dashboard() -> HTMLResponse:
     <title>Lafarge Site Operations Platform | Control Center</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
-        /* ============================================================
-           DESIGN SYSTEM — Enterprise dark theme (Grafana-style)
-           ============================================================ */
         :root {{
             --bg-primary: #0f172a;
             --bg-secondary: #1e293b;
@@ -353,7 +271,6 @@ async def dashboard() -> HTMLResponse:
             --success: #22c55e;
             --warning: #f59e0b;
             --danger: #ef4444;
-            --lafarge-blue: #003057;
             --radius: 12px;
             --shadow: 0 4px 24px rgba(0,0,0,0.3);
         }}
@@ -365,8 +282,6 @@ async def dashboard() -> HTMLResponse:
             min-height: 100vh;
             line-height: 1.5;
         }}
-
-        /* --- Header --- */
         .header {{
             background: linear-gradient(135deg, #0a1628 0%, #1a2332 100%);
             border-bottom: 1px solid var(--border);
@@ -377,258 +292,113 @@ async def dashboard() -> HTMLResponse:
             flex-wrap: wrap;
             gap: 12px;
         }}
-        .header-brand {{
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }}
+        .header-brand {{ display: flex; align-items: center; gap: 12px; }}
         .header-brand .logo {{
             width: 36px; height: 36px;
-            background: var(--accent);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 800; font-size: 18px;
-            color: #0f172a;
+            background: var(--accent); border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; font-size: 18px; color: #0f172a;
         }}
-        .header-brand h1 {{
-            font-size: 18px; font-weight: 600;
-            letter-spacing: 0.3px;
-        }}
-        .header-brand h1 span {{
-            color: var(--accent);
-        }}
-        .header-brand .subtitle {{
-            font-size: 12px; color: var(--text-muted);
-            margin-top: -2px;
-        }}
-        .header-status {{
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            font-size: 13px;
-        }}
+        .header-brand h1 {{ font-size: 18px; font-weight: 600; letter-spacing: 0.3px; }}
+        .header-brand h1 span {{ color: var(--accent); }}
+        .header-brand .subtitle {{ font-size: 12px; color: var(--text-muted); margin-top: -2px; }}
+        .header-status {{ display: flex; align-items: center; gap: 16px; font-size: 13px; }}
         .status-indicator {{
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 14px;
-            border-radius: 20px;
+            display: flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: 20px;
             background: rgba(34,197,94,0.1);
             border: 1px solid rgba(34,197,94,0.25);
         }}
         .status-indicator .dot {{
-            width: 8px; height: 8px;
-            border-radius: 50%;
-            background: var(--success);
-            animation: pulse 2s infinite;
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--success); animation: pulse 2s infinite;
         }}
-        @keyframes pulse {{
-            0%, 100% {{ opacity: 1; }}
-            50% {{ opacity: 0.4; }}
-        }}
-        .header-meta {{
-            color: var(--text-muted);
-            font-size: 12px;
-        }}
-
-        /* --- Container --- */
-        .container {{
-            max-width: 1440px;
-            margin: 0 auto;
-            padding: 24px 32px;
-        }}
-
-        /* --- Section title --- */
+        @keyframes pulse {{ 0%,100% {{ opacity: 1; }} 50% {{ opacity: 0.4; }} }}
+        .header-meta {{ color: var(--text-muted); font-size: 12px; }}
+        .container {{ max-width: 1440px; margin: 0 auto; padding: 24px 32px; }}
         .section-title {{
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 14px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--text-secondary);
-            margin-bottom: 16px;
-            padding-bottom: 8px;
+            display: flex; align-items: center; gap: 10px;
+            font-size: 14px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 1px; color: var(--text-secondary);
+            margin-bottom: 16px; padding-bottom: 8px;
             border-bottom: 1px solid var(--border);
         }}
         .section-title .icon {{ font-size: 16px; }}
-
-        /* --- Metric cards grid --- */
         .metrics-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 32px;
+            gap: 16px; margin-bottom: 32px;
         }}
         .metric-card {{
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 20px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 20px;
             transition: border-color 0.2s, box-shadow 0.2s;
         }}
-        .metric-card:hover {{
-            border-color: var(--accent);
-            box-shadow: 0 0 20px var(--accent-glow);
-        }}
+        .metric-card:hover {{ border-color: var(--accent); box-shadow: 0 0 20px var(--accent-glow); }}
         .metric-card .label {{
-            font-size: 11px;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            color: var(--text-muted);
-            margin-bottom: 6px;
+            font-size: 11px; font-weight: 500; text-transform: uppercase;
+            letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 6px;
         }}
-        .metric-card .value {{
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--text-primary);
-            line-height: 1.1;
-        }}
-        .metric-card .value .unit {{
-            font-size: 14px;
-            font-weight: 400;
-            color: var(--text-secondary);
-            margin-left: 4px;
-        }}
-        .metric-card .sub {{
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-top: 4px;
-        }}
-        .metric-card.accent {{
-            border-left: 3px solid var(--accent);
-        }}
+        .metric-card .value {{ font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1.1; }}
+        .metric-card .value .unit {{ font-size: 14px; font-weight: 400; color: var(--text-secondary); margin-left: 4px; }}
+        .metric-card .sub {{ font-size: 12px; color: var(--text-secondary); margin-top: 4px; }}
+        .metric-card.accent {{ border-left: 3px solid var(--accent); }}
         .metric-card.green {{ border-left: 3px solid var(--success); }}
         .metric-card.blue {{ border-left: 3px solid #3b82f6; }}
-
-        /* --- Progress bar (for CPU / Memory) --- */
-        .progress-bar {{
-            width: 100%;
-            height: 6px;
-            background: #2d3a4e;
-            border-radius: 4px;
-            margin-top: 10px;
-            overflow: hidden;
-        }}
-        .progress-bar .fill {{
-            height: 100%;
-            border-radius: 4px;
-            transition: width 0.8s ease;
-        }}
+        .progress-bar {{ width: 100%; height: 6px; background: #2d3a4e; border-radius: 4px; margin-top: 10px; overflow: hidden; }}
+        .progress-bar .fill {{ height: 100%; border-radius: 4px; transition: width 0.8s ease; }}
         .fill-green {{ background: var(--success); }}
         .fill-warning {{ background: var(--warning); }}
         .fill-danger {{ background: var(--danger); }}
-        .fill-accent {{ background: var(--accent); }}
-
-        /* --- Chart container --- */
         .chart-wrapper {{
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 24px;
-            margin-bottom: 32px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 24px; margin-bottom: 32px;
         }}
-        .chart-wrapper canvas {{
-            max-height: 260px;
-        }}
-
-        /* --- Table --- */
+        .chart-wrapper canvas {{ max-height: 260px; }}
         .table-wrapper {{
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            overflow: hidden;
-            margin-bottom: 32px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: var(--radius); overflow: hidden; margin-bottom: 32px;
         }}
-        .table-wrapper table {{
-            width: 100%;
-            border-collapse: collapse;
-        }}
-        .table-wrapper th,
-        .table-wrapper td {{
-            padding: 12px 20px;
-            text-align: left;
-            font-size: 13px;
-        }}
+        .table-wrapper table {{ width: 100%; border-collapse: collapse; }}
+        .table-wrapper th, .table-wrapper td {{ padding: 12px 20px; text-align: left; font-size: 13px; }}
         .table-wrapper th {{
-            background: #0f172a;
-            color: var(--text-muted);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.6px;
-            font-size: 11px;
+            background: #0f172a; color: var(--text-muted); font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.6px; font-size: 11px;
             border-bottom: 1px solid var(--border);
         }}
-        .table-wrapper td {{
-            border-bottom: 1px solid rgba(45,58,78,0.5);
-            color: var(--text-primary);
-        }}
+        .table-wrapper td {{ border-bottom: 1px solid rgba(45,58,78,0.5); color: var(--text-primary); }}
         .table-wrapper tr:last-child td {{ border-bottom: none; }}
-        .table-wrapper tr:hover td {{
-            background: rgba(238,114,3,0.04);
-        }}
-
-        /* --- Badges --- */
+        .table-wrapper tr:hover td {{ background: rgba(238,114,3,0.04); }}
         .badge {{
-            display: inline-block;
-            padding: 2px 10px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
+            display: inline-block; padding: 2px 10px; border-radius: 12px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
         }}
-        .badge.status-onsite {{
-            background: rgba(34,197,94,0.12);
-            color: var(--success);
-        }}
-        .badge.status-exited {{
-            background: rgba(100,116,139,0.15);
-            color: var(--text-muted);
-        }}
-        .mono {{ font-family: 'JetBrains Mono', 'Cascadia Code', monospace; font-size: 12px; }}
+        .badge.status-onsite {{ background: rgba(34,197,94,0.12); color: var(--success); }}
+        .badge.status-exited {{ background: rgba(100,116,139,0.15); color: var(--text-muted); }}
+        .mono {{ font-family: 'JetBrains Mono','Cascadia Code',monospace; font-size: 12px; }}
         .empty {{ text-align: center; color: var(--text-muted); padding: 32px; font-size: 13px; }}
-
-        /* --- Footer --- */
-        .footer {{
-            text-align: center;
-            padding: 20px;
-            color: var(--text-muted);
-            font-size: 11px;
-            border-top: 1px solid var(--border);
-            margin-top: 16px;
-        }}
-
-        /* --- Responsive --- */
+        .footer {{ text-align: center; padding: 20px; color: var(--text-muted); font-size: 11px; border-top: 1px solid var(--border); margin-top: 16px; }}
         @media (max-width: 768px) {{
             .header {{ padding: 12px 16px; }}
             .header-status {{ width: 100%; justify-content: flex-start; }}
             .container {{ padding: 16px; }}
-            .metrics-grid {{ grid-template-columns: repeat(2, 1fr); gap: 12px; }}
+            .metrics-grid {{ grid-template-columns: repeat(2,1fr); gap: 12px; }}
             .metric-card .value {{ font-size: 22px; }}
-            .table-wrapper th,
-            .table-wrapper td {{ padding: 10px 12px; font-size: 12px; }}
+            .table-wrapper th, .table-wrapper td {{ padding: 10px 12px; font-size: 12px; }}
         }}
-        @media (max-width: 480px) {{
-            .metrics-grid {{ grid-template-columns: 1fr; }}
+        @media (max-width: 480px) {{ .metrics-grid {{ grid-template-columns: 1fr; }} }}
+        .skeleton {{
+            display: inline-block;
+            background: linear-gradient(90deg,#2d3a4e 25%,#3a4a62 50%,#2d3a4e 75%);
+            background-size: 200% 100%; animation: shimmer 1.5s infinite;
+            border-radius: 4px; height: 28px; width: 80px;
         }}
-
-        /* --- Last-updated timestamp --- */
+        @keyframes shimmer {{ 0% {{ background-position: 200% 0; }} 100% {{ background-position: -200% 0; }} }}
         .last-updated {{
-            position: fixed;
-            bottom: 16px;
-            right: 24px;
-            font-size: 11px;
-            color: var(--text-muted);
-            background: rgba(15,23,42,0.85);
-            padding: 6px 14px;
-            border-radius: 20px;
-            border: 1px solid var(--border);
-            backdrop-filter: blur(4px);
+            position: fixed; bottom: 16px; right: 24px; font-size: 11px;
+            color: var(--text-muted); background: rgba(15,23,42,0.85);
+            padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
+            backdrop-filter: blur(4px); z-index: 100;
         }}
     </style>
 </head>
@@ -651,115 +421,77 @@ async def dashboard() -> HTMLResponse:
     </header>
 
     <div class="container">
-        <!-- ============================================================
-             SECTION 1 — Business Metrics
-             ============================================================ -->
-        <div class="section-title">
-            <span class="icon">&#9881;</span> Business Metrics — Site Operations
-        </div>
+        <div class="section-title"><span class="icon">&#9881;</span> Business Metrics — Site Operations</div>
         <div class="metrics-grid">
             <div class="metric-card accent">
                 <div class="label">Trucks on Site</div>
-                <div class="value">{trucks_on_site_count}</div>
+                <div class="value" id="trucks-on-site"><span class="skeleton"></span></div>
                 <div class="sub">Currently active</div>
             </div>
             <div class="metric-card green">
                 <div class="label">Total Processed</div>
-                <div class="value">{trucks_count}</div>
+                <div class="value" id="total-processed"><span class="skeleton"></span></div>
                 <div class="sub">All time</div>
             </div>
             <div class="metric-card blue">
                 <div class="label">Entries Today</div>
-                <div class="value">{entries_today}</div>
+                <div class="value" id="entries-today"><span class="skeleton"></span></div>
                 <div class="sub">Inbound</div>
             </div>
             <div class="metric-card">
                 <div class="label">Exits Today</div>
-                <div class="value">{exits_today}</div>
+                <div class="value" id="exits-today"><span class="skeleton"></span></div>
                 <div class="sub">Outbound</div>
             </div>
         </div>
 
-        <!-- ============================================================
-             SECTION 2 — Platform Health
-             ============================================================ -->
-        <div class="section-title">
-            <span class="icon">&#9881;</span> Platform Health — Infrastructure Status
-        </div>
+        <div class="section-title"><span class="icon">&#9881;</span> Platform Health — Infrastructure Status</div>
         <div class="metrics-grid">
             <div class="metric-card">
                 <div class="label">CPU Usage</div>
-                <div class="value">{system["cpu_usage_percent"]}<span class="unit">%</span></div>
-                <div class="progress-bar">
-                    <div class="fill fill-{cpu_class}" style="width:{system["cpu_usage_percent"]}%"></div>
-                </div>
+                <div class="value" id="cpu-usage"><span class="skeleton"></span></div>
+                <div class="progress-bar"><div class="fill" id="cpu-bar" style="width:0%"></div></div>
             </div>
             <div class="metric-card">
                 <div class="label">Memory Usage</div>
-                <div class="value">{system["memory_usage_percent"]}<span class="unit">%</span></div>
-                <div class="progress-bar">
-                    <div class="fill fill-{mem_class}" style="width:{system["memory_usage_percent"]}%"></div>
-                </div>
-            </div>
-            <div class="metric-card">
-                <div class="label">Memory Usage</div>
-                <div class="value">{system["memory_usage_percent"]}<span class="unit">%</span></div>
-                <div class="progress-bar">
-                    <div class="fill fill-{mem_class}" style="width:{system["memory_usage_percent"]}%"></div>
-                </div>
+                <div class="value" id="memory-usage"><span class="skeleton"></span></div>
+                <div class="progress-bar"><div class="fill" id="memory-bar" style="width:0%"></div></div>
             </div>
             <div class="metric-card">
                 <div class="label">Active Instances</div>
-                <div class="value">{system["active_instances"]}<span class="unit">nodes</span></div>
+                <div class="value" id="active-instances"><span class="skeleton"></span></div>
                 <div class="sub">EC2 serving traffic</div>
             </div>
             <div class="metric-card">
                 <div class="label">S3 Storage</div>
-                <div class="value">{system["s3_storage_mb"]}<span class="unit">MB</span></div>
+                <div class="value" id="s3-storage"><span class="skeleton"></span></div>
                 <div class="sub">Traffic logs bucket</div>
             </div>
             <div class="metric-card">
                 <div class="label">API Latency (P95)</div>
-                <div class="value">{system["api_latency_p95_seconds"]}<span class="unit">s</span></div>
+                <div class="value" id="api-latency"><span class="skeleton"></span></div>
                 <div class="sub">Response time</div>
             </div>
             <div class="metric-card">
                 <div class="label">Overall Status</div>
-                <div class="value" style="color: {overall_color}">
-                    {system["overall_status"].upper()}
-                </div>
+                <div class="value" id="overall-status"><span class="skeleton"></span></div>
                 <div class="sub">Platform health</div>
             </div>
         </div>
 
-        <!-- ============================================================
-             SECTION 3 — Traffic Flow Chart
-             ============================================================ -->
-        <div class="section-title">
-            <span class="icon">&#9881;</span> Truck Traffic Flow — Last 24 Hours
-        </div>
+        <div class="section-title"><span class="icon">&#9881;</span> Truck Traffic Flow — Last 24 Hours</div>
         <div class="chart-wrapper">
             <canvas id="trafficChart"></canvas>
         </div>
 
-        <!-- ============================================================
-             SECTION 4 — Recent Movements
-             ============================================================ -->
-        <div class="section-title">
-            <span class="icon">&#9881;</span> Recent Movements — Live Feed
-        </div>
+        <div class="section-title"><span class="icon">&#9881;</span> Recent Movements — Live Feed</div>
         <div class="table-wrapper">
             <table>
                 <thead>
-                    <tr>
-                        <th>Truck ID</th>
-                        <th>License Plate</th>
-                        <th>Status</th>
-                        <th>Timestamp</th>
-                    </tr>
+                    <tr><th>Truck ID</th><th>License Plate</th><th>Status</th><th>Timestamp</th></tr>
                 </thead>
-                <tbody>
-                    {trucks_rows}
+                <tbody id="movements-tbody">
+                    <tr><td colspan="4" class="empty">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -769,72 +501,92 @@ async def dashboard() -> HTMLResponse:
         Lafarge Site Operations &mdash; Meknès Industrial Platform &mdash; Truck Traffic Management System v{APP_VERSION}
     </footer>
 
-    <div class="last-updated" id="lastUpdated"></div>
+    <div class="last-updated" id="lastUpdated">Connecting...</div>
 
     <script>
-        // ---- Traffic flow chart ----
-        const trafficData = {traffic_json};
-        const hours = trafficData.map(d => String(d.hour).padStart(2, '0') + ':00');
-        const entries = trafficData.map(d => d.entries);
+        let trafficChart = null;
 
-        const ctx = document.getElementById('trafficChart').getContext('2d');
-        new Chart(ctx, {{
-            type: 'line',
-            data: {{
-                labels: hours,
-                datasets: [{{
-                    label: 'Truck Entries',
-                    data: entries,
-                    borderColor: '#EE7203',
-                    backgroundColor: 'rgba(238,114,3,0.08)',
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    pointHoverRadius: 6,
-                    pointBackgroundColor: '#EE7203',
-                    fill: true,
-                    tension: 0.3,
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {{
-                    legend: {{ display: false }},
-                    tooltip: {{
-                        backgroundColor: '#1e293b',
-                        titleColor: '#f1f5f9',
-                        bodyColor: '#94a3b8',
-                        borderColor: '#2d3a4e',
-                        borderWidth: 1,
-                        padding: 12,
-                        cornerRadius: 8,
-                    }}
-                }},
-                scales: {{
-                    x: {{
-                        grid: {{ color: 'rgba(45,58,78,0.3)', drawBorder: false }},
-                        ticks: {{ color: '#64748b', font: {{ size: 11 }} }}
-                    }},
-                    y: {{
-                        beginAtZero: true,
-                        grid: {{ color: 'rgba(45,58,78,0.3)', drawBorder: false }},
-                        ticks: {{ color: '#64748b', font: {{ size: 11 }} }}
-                    }}
-                }},
-                interaction: {{
-                    intersect: false,
-                    mode: 'index',
+        function healthClass(val) {{
+            if (val > 85) return 'danger';
+            if (val > 65) return 'warning';
+            return 'green';
+        }}
+
+        function renderDashboard(data) {{
+            const biz = data.business;
+            const plat = data.platform;
+
+            document.getElementById('trucks-on-site').innerHTML = biz.trucks_on_site;
+            document.getElementById('total-processed').innerHTML = biz.total_trucks;
+            document.getElementById('entries-today').innerHTML = biz.entries_today;
+            document.getElementById('exits-today').innerHTML = biz.exits_today;
+
+            document.getElementById('cpu-usage').innerHTML = plat.cpu_usage_percent + '<span class="unit">%</span>';
+            document.getElementById('memory-usage').innerHTML = plat.memory_usage_percent + '<span class="unit">%</span>';
+            document.getElementById('active-instances').innerHTML = plat.active_instances + '<span class="unit">nodes</span>';
+            document.getElementById('s3-storage').innerHTML = plat.s3_storage_mb + '<span class="unit">MB</span>';
+            document.getElementById('api-latency').innerHTML = plat.api_latency_p95_seconds + '<span class="unit">s</span>';
+
+            const cpuFill = document.getElementById('cpu-bar');
+            cpuFill.style.width = plat.cpu_usage_percent + '%';
+            cpuFill.className = 'fill fill-' + healthClass(plat.cpu_usage_percent);
+
+            const memFill = document.getElementById('memory-bar');
+            memFill.style.width = plat.memory_usage_percent + '%';
+            memFill.className = 'fill fill-' + healthClass(plat.memory_usage_percent);
+
+            const statusEl = document.getElementById('overall-status');
+            const colors = {{ healthy: 'var(--success)', degraded: 'var(--warning)', critical: 'var(--danger)' }};
+            statusEl.innerHTML = '<span style="color:' + (colors[plat.overall_status] || 'var(--text-muted)') + '">' + plat.overall_status.toUpperCase() + '</span>';
+
+            const tbody = document.getElementById('movements-tbody');
+            if (data.recent_movements && data.recent_movements.length) {{
+                tbody.innerHTML = data.recent_movements.map(function(m) {{
+                    const cls = m.event === 'truck_entry' ? 'status-onsite' : 'status-exited';
+                    const lbl = m.event === 'truck_entry' ? 'On Site' : 'Exited';
+                    return '<tr><td><span class="mono">' + (m.truck_id ? m.truck_id.slice(0,8) : '—') + '</span></td><td>' + (m.license_plate || '—') + '</td><td><span class="badge ' + cls + '">' + lbl + '</span></td><td class="mono">' + (m.event_time || '—') + '</td></tr>';
+                }}).join('');
+            }} else {{
+                tbody.innerHTML = '<tr><td colspan="4" class="empty">No trucks recorded yet</td></tr>';
+            }}
+
+            if (data.traffic_history && data.traffic_history.length) {{
+                const labels = data.traffic_history.map(function(d) {{ return String(d.hour).padStart(2,'0') + ':00'; }});
+                const values = data.traffic_history.map(function(d) {{ return d.entries; }});
+                if (trafficChart) {{
+                    trafficChart.data.labels = labels;
+                    trafficChart.data.datasets[0].data = values;
+                    trafficChart.update('none');
+                }} else {{
+                    const ctx = document.getElementById('trafficChart').getContext('2d');
+                    trafficChart = new Chart(ctx, {{
+                        type: 'line',
+                        data: {{ labels: labels, datasets: [{{ label: 'Truck Entries', data: values, borderColor: '#EE7203', backgroundColor: 'rgba(238,114,3,0.08)', borderWidth: 2, pointRadius: 2, pointHoverRadius: 6, pointBackgroundColor: '#EE7203', fill: true, tension: 0.3 }}] }},
+                        options: {{
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: {{ legend: {{ display: false }}, tooltip: {{ backgroundColor: '#1e293b', titleColor: '#f1f5f9', bodyColor: '#94a3b8', borderColor: '#2d3a4e', borderWidth: 1, padding: 12, cornerRadius: 8 }} }},
+                            scales: {{ x: {{ grid: {{ color: 'rgba(45,58,78,0.3)', drawBorder: false }}, ticks: {{ color: '#64748b', font: {{ size: 11 }} }} }}, y: {{ beginAtZero: true, grid: {{ color: 'rgba(45,58,78,0.3)', drawBorder: false }}, ticks: {{ color: '#64748b', font: {{ size: 11 }} }} }} }},
+                            interaction: {{ intersect: false, mode: 'index' }}
+                        }}
+                    }});
                 }}
             }}
-        }});
 
-        // ---- Last-updated timestamp ----
-        document.getElementById('lastUpdated').textContent =
-            'Last updated: ' + new Date().toLocaleTimeString('en-GB', {{ hour12: false }});
+            document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-GB', {{ hour12: false }});
+        }}
+
+        function fetchMetrics() {{
+            fetch('/api/metrics')
+                .then(function(r) {{ return r.json(); }})
+                .then(function(data) {{ renderDashboard(data); }})
+                .catch(function() {{ document.getElementById('lastUpdated').textContent = 'Error connecting to API'; }});
+        }}
+
+        fetchMetrics();
+        setInterval(fetchMetrics, 30000);
     </script>
 </body>
-</html>
-"""
+</html>"""
     return HTMLResponse(content=html_content, status_code=200)
 
 
@@ -881,6 +633,17 @@ async def api_metrics():
     system = monitoring.get_system_status()
     traffic_history = monitoring.get_traffic_history()
 
+    recent = []
+    for entry in logs[-10:][::-1]:
+        recent.append(
+            {
+                "truck_id": entry.get("truck_id", ""),
+                "license_plate": entry.get("license_plate", ""),
+                "event": entry.get("event", ""),
+                "event_time": entry.get("event_time", ""),
+            }
+        )
+
     return {
         "business": {
             "total_trucks": trucks_count,
@@ -890,6 +653,7 @@ async def api_metrics():
         },
         "platform": system,
         "traffic_history": traffic_history,
+        "recent_movements": recent,
     }
 
 

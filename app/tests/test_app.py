@@ -84,16 +84,28 @@ def test_truck_exit_not_found_returns_404():
     assert response.json()["detail"] == "Camion introuvable"
 
 
-def test_dashboard_shows_truck_row_when_truck_exists():
+def test_dashboard_returns_html_template():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Lafarge" in response.text
+    assert "Control Center" in response.text
+    assert "chart.js" in response.text
+    assert "/api/metrics" in response.text
+
+
+def test_api_metrics_returns_truck_data():
     enter_response = client.post("/api/trucks/enter", params={"plate": "ZZZ-999"})
     assert enter_response.status_code == 200
     truck_id = enter_response.json()["truck_id"]
 
-    response = client.get("/")
+    response = client.get("/api/metrics")
     assert response.status_code == 200
-    assert "ZZZ-999" in response.text
-    assert "On Site" in response.text
-    assert truck_id[:8] in response.text
+    data = response.json()
+    assert data["business"]["total_trucks"] >= 1
+    assert data["business"]["trucks_on_site"] >= 1
+    assert any(m["license_plate"] == "ZZZ-999" for m in data["recent_movements"])
+    assert "platform" in data
+    assert "traffic_history" in data
 
 
 def test_truck_exit_already_exited_returns_409():
