@@ -64,10 +64,10 @@ variable "key_pair_name" {
   default     = "lafarge-devops-keypair"
 }
 
-variable "public_key_path" {
-  description = "Chemin local vers la clé publique SSH à importer dans eu-west-3. Par défaut : ~/.ssh/id_rsa.pub"
+variable "public_key_content" {
+  description = "Contenu de la clé publique SSH (string) passée via GitHub Secrets. Utilisée par aws_key_pair dans eu-west-3."
   type        = string
-  default     = "~/.ssh/id_rsa.pub"
+  sensitive   = true
 }
 
 variable "app_docker_image" {

@@ -349,7 +349,7 @@ resource "aws_lb_listener" "https" {
 # --------------------------------------------------------------------------
 resource "aws_key_pair" "app" {
   key_name   = var.key_pair_name
-  public_key = file(var.public_key_path)
+  public_key = var.public_key_content
 
   tags = merge(var.tags, {
     Name = "${var.project_name}-keypair"
