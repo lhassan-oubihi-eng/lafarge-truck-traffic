@@ -55,6 +55,21 @@ def _get_s3_service():
         return s3_service
 
 
+# --------------------------------------------------------------------------
+# Monitoring Service – lazy import for the same reason as S3 above.
+# Provides platform health metrics (CPU, memory, instances, S3, latency).
+# --------------------------------------------------------------------------
+def _get_monitoring_service():
+    try:
+        from services.monitoring import monitoring_service  # Docker
+
+        return monitoring_service
+    except ModuleNotFoundError:
+        from app.services.monitoring import monitoring_service  # Host / CI
+
+        return monitoring_service
+
+
 APP_NAME = "lafarge-truck-traffic"
 APP_VERSION = "1.0.0"
 
@@ -228,11 +243,13 @@ async def prometheus_middleware(request: Request, call_next):
 
 
 # --------------------------------------------------------------------------
-# Route : Dashboard HTML
+# Route : Dashboard HTML — Operations Control Center
 # --------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard() -> HTMLResponse:
     s3 = _get_s3_service()
+    monitoring = _get_monitoring_service()
+
     try:
         logs = s3.list_truck_logs()
     except Exception:
@@ -252,10 +269,39 @@ async def dashboard() -> HTMLResponse:
                 }
             )
 
+    # --- Business metrics ---
     trucks_count = len(logs)
     trucks_on_site_count = sum(
         1 for t in logs if t.get("event") == "truck_entry" and not t.get("exit_time")
     )
+    entries_today = sum(1 for t in logs if t.get("event") == "truck_entry")
+    exits_today = sum(1 for t in logs if t.get("event") == "truck_exit")
+
+    # --- Platform metrics ---
+    system = monitoring.get_system_status()
+    traffic_history = monitoring.get_traffic_history()
+
+    # Health colour classes for progress bars
+    def _health_class(val):
+        if val > 85:
+            return "danger"
+        if val > 65:
+            return "warning"
+        return "green"
+
+    cpu_class = _health_class(system["cpu_usage_percent"])
+    mem_class = _health_class(system["memory_usage_percent"])
+    overall_color = (
+        "var(--success)"
+        if system["overall_status"] == "healthy"
+        else (
+            "var(--warning)"
+            if system["overall_status"] == "degraded"
+            else "var(--danger)"
+        )
+    )
+
+    # --- Recent movements table rows ---
     trucks_rows = ""
     for entry in logs[-10:][::-1]:
         truck_id = entry.get("truck_id", "N/A")
@@ -266,139 +312,450 @@ async def dashboard() -> HTMLResponse:
         status_class = "status-onsite" if event == "truck_entry" else "status-exited"
         trucks_rows += f"""
         <tr>
-            <td>{truck_id[:8]}</td>
+            <td><span class="mono">{truck_id[:8]}</span></td>
             <td>{plate}</td>
-            <td class="{status_class}">{status_label}</td>
-            <td>{event_time}</td>
+            <td><span class="badge {status_class}">{status_label}</span></td>
+            <td class="mono">{event_time}</td>
         </tr>"""
 
     if not trucks_rows:
-        trucks_rows = "<tr><td colspan='4' class='empty'>Aucun camion enregistré pour le moment</td></tr>"
+        trucks_rows = (
+            "<tr><td colspan='4' class='empty'>No trucks recorded yet</td></tr>"
+        )
 
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-        <meta charset="UTF-8">
-        <title>Lafarge | Truck Traffic Dashboard</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            :root {{
-                --lafarge-blue: #003057;
-                --lafarge-orange: #EE7203;
-                --bg: #f4f6f8;
-            }}
-            * {{ box-sizing: border-box; }}
-            body {{
-                font-family: 'Segoe UI', Arial, sans-serif;
-                background: var(--bg);
-                margin: 0;
-                color: #1a1a1a;
-            }}
-            header {{
-                background: var(--lafarge-blue);
-                color: white;
-                padding: 24px 40px;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-            }}
-            header h1 {{
-                margin: 0;
-                font-size: 22px;
-                font-weight: 600;
-            }}
-            header span {{
-                color: var(--lafarge-orange);
-                font-weight: 700;
-            }}
-            .container {{
-                padding: 32px 40px;
-            }}
-            .cards {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-                gap: 20px;
-                margin-bottom: 32px;
-            }}
-            .card {{
-                background: white;
-                border-radius: 10px;
-                padding: 20px;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-                border-left: 5px solid var(--lafarge-orange);
-            }}
-            .card h2 {{
-                margin: 0;
-                font-size: 32px;
-                color: var(--lafarge-blue);
-            }}
-            .card p {{
-                margin: 6px 0 0;
-                color: #666;
-                font-size: 14px;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                background: white;
-                border-radius: 10px;
-                overflow: hidden;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-            }}
-            th, td {{
-                padding: 12px 16px;
-                text-align: left;
-                border-bottom: 1px solid #eee;
-                font-size: 14px;
-            }}
-            th {{
-                background: var(--lafarge-blue);
-                color: white;
-                text-transform: uppercase;
-                font-size: 12px;
-            }}
-            .empty {{ text-align: center; color: #999; padding: 24px; }}
-            footer {{
-                text-align: center;
-                padding: 20px;
-                color: #999;
-                font-size: 12px;
-            }}
-            .status-onsite {{ color: #1b8a3d; font-weight: 600; }}
-            .status-exited {{ color: #999; }}
-        </style>
-    </head>
-    <body>
-        <header>
-            <h1>Lafarge<span> | Truck Traffic Management</span></h1>
-            <div>Statut système : <strong style="color:#4caf50;">● Opérationnel</strong></div>
-        </header>
-        <div class="container">
-            <div class="cards">
-                <div class="card">
-                    <h2>{trucks_count}</h2>
-                    <p>Camions suivis (session)</p>
-                </div>
-                <div class="card">
-                    <h2>{trucks_on_site_count}</h2>
-                    <p>Camions actuellement sur site</p>
-                </div>
-                <div class="card">
-                    <h2>{APP_VERSION}</h2>
-                    <p>Version de l'application</p>
+    # --- Traffic history JSON for Chart.js ---
+    import json as _json
+
+    traffic_json = _json.dumps(traffic_history)
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lafarge Site Operations Platform | Control Center</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        /* ============================================================
+           DESIGN SYSTEM — Enterprise dark theme (Grafana-style)
+           ============================================================ */
+        :root {{
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #1e293b;
+            --bg-card-hover: #253248;
+            --border: #2d3a4e;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #EE7203;
+            --accent-glow: rgba(238,114,3,0.15);
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --lafarge-blue: #003057;
+            --radius: 12px;
+            --shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }}
+
+        /* --- Header --- */
+        .header {{
+            background: linear-gradient(135deg, #0a1628 0%, #1a2332 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }}
+        .header-brand {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+        .header-brand .logo {{
+            width: 36px; height: 36px;
+            background: var(--accent);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800; font-size: 18px;
+            color: #0f172a;
+        }}
+        .header-brand h1 {{
+            font-size: 18px; font-weight: 600;
+            letter-spacing: 0.3px;
+        }}
+        .header-brand h1 span {{
+            color: var(--accent);
+        }}
+        .header-brand .subtitle {{
+            font-size: 12px; color: var(--text-muted);
+            margin-top: -2px;
+        }}
+        .header-status {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 13px;
+        }}
+        .status-indicator {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: rgba(34,197,94,0.1);
+            border: 1px solid rgba(34,197,94,0.25);
+        }}
+        .status-indicator .dot {{
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }}
+        @keyframes pulse {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: 0.4; }}
+        }}
+        .header-meta {{
+            color: var(--text-muted);
+            font-size: 12px;
+        }}
+
+        /* --- Container --- */
+        .container {{
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px 32px;
+        }}
+
+        /* --- Section title --- */
+        .section-title {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }}
+        .section-title .icon {{ font-size: 16px; }}
+
+        /* --- Metric cards grid --- */
+        .metrics-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }}
+        .metric-card {{
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }}
+        .metric-card:hover {{
+            border-color: var(--accent);
+            box-shadow: 0 0 20px var(--accent-glow);
+        }}
+        .metric-card .label {{
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }}
+        .metric-card .value {{
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.1;
+        }}
+        .metric-card .value .unit {{
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--text-secondary);
+            margin-left: 4px;
+        }}
+        .metric-card .sub {{
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }}
+        .metric-card.accent {{
+            border-left: 3px solid var(--accent);
+        }}
+        .metric-card.green {{ border-left: 3px solid var(--success); }}
+        .metric-card.blue {{ border-left: 3px solid #3b82f6; }}
+
+        /* --- Progress bar (for CPU / Memory) --- */
+        .progress-bar {{
+            width: 100%;
+            height: 6px;
+            background: #2d3a4e;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+        }}
+        .progress-bar .fill {{
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.8s ease;
+        }}
+        .fill-green {{ background: var(--success); }}
+        .fill-warning {{ background: var(--warning); }}
+        .fill-danger {{ background: var(--danger); }}
+        .fill-accent {{ background: var(--accent); }}
+
+        /* --- Chart container --- */
+        .chart-wrapper {{
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 32px;
+        }}
+        .chart-wrapper canvas {{
+            max-height: 260px;
+        }}
+
+        /* --- Table --- */
+        .table-wrapper {{
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            margin-bottom: 32px;
+        }}
+        .table-wrapper table {{
+            width: 100%;
+            border-collapse: collapse;
+        }}
+        .table-wrapper th,
+        .table-wrapper td {{
+            padding: 12px 20px;
+            text-align: left;
+            font-size: 13px;
+        }}
+        .table-wrapper th {{
+            background: #0f172a;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            font-size: 11px;
+            border-bottom: 1px solid var(--border);
+        }}
+        .table-wrapper td {{
+            border-bottom: 1px solid rgba(45,58,78,0.5);
+            color: var(--text-primary);
+        }}
+        .table-wrapper tr:last-child td {{ border-bottom: none; }}
+        .table-wrapper tr:hover td {{
+            background: rgba(238,114,3,0.04);
+        }}
+
+        /* --- Badges --- */
+        .badge {{
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }}
+        .badge.status-onsite {{
+            background: rgba(34,197,94,0.12);
+            color: var(--success);
+        }}
+        .badge.status-exited {{
+            background: rgba(100,116,139,0.15);
+            color: var(--text-muted);
+        }}
+        .mono {{ font-family: 'JetBrains Mono', 'Cascadia Code', monospace; font-size: 12px; }}
+        .empty {{ text-align: center; color: var(--text-muted); padding: 32px; font-size: 13px; }}
+
+        /* --- Footer --- */
+        .footer {{
+            text-align: center;
+            padding: 20px;
+            color: var(--text-muted);
+            font-size: 11px;
+            border-top: 1px solid var(--border);
+            margin-top: 16px;
+        }}
+
+        /* --- Responsive --- */
+        @media (max-width: 768px) {{
+            .header {{ padding: 12px 16px; }}
+            .header-status {{ width: 100%; justify-content: flex-start; }}
+            .container {{ padding: 16px; }}
+            .metrics-grid {{ grid-template-columns: repeat(2, 1fr); gap: 12px; }}
+            .metric-card .value {{ font-size: 22px; }}
+            .table-wrapper th,
+            .table-wrapper td {{ padding: 10px 12px; font-size: 12px; }}
+        }}
+        @media (max-width: 480px) {{
+            .metrics-grid {{ grid-template-columns: 1fr; }}
+        }}
+
+        /* --- Last-updated timestamp --- */
+        .last-updated {{
+            position: fixed;
+            bottom: 16px;
+            right: 24px;
+            font-size: 11px;
+            color: var(--text-muted);
+            background: rgba(15,23,42,0.85);
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            backdrop-filter: blur(4px);
+        }}
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-brand">
+            <div class="logo">LF</div>
+            <div>
+                <h1>Lafarge <span>Site Operations Platform</span></h1>
+                <div class="subtitle">Truck Traffic Control Center</div>
+            </div>
+        </div>
+        <div class="header-status">
+            <div class="status-indicator">
+                <span class="dot"></span>
+                <span>All Systems Operational</span>
+            </div>
+            <span class="header-meta">v{APP_VERSION}</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- ============================================================
+             SECTION 1 — Business Metrics
+             ============================================================ -->
+        <div class="section-title">
+            <span class="icon">&#9881;</span> Business Metrics — Site Operations
+        </div>
+        <div class="metrics-grid">
+            <div class="metric-card accent">
+                <div class="label">Trucks on Site</div>
+                <div class="value">{trucks_on_site_count}</div>
+                <div class="sub">Currently active</div>
+            </div>
+            <div class="metric-card green">
+                <div class="label">Total Processed</div>
+                <div class="value">{trucks_count}</div>
+                <div class="sub">All time</div>
+            </div>
+            <div class="metric-card blue">
+                <div class="label">Entries Today</div>
+                <div class="value">{entries_today}</div>
+                <div class="sub">Inbound</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">Exits Today</div>
+                <div class="value">{exits_today}</div>
+                <div class="sub">Outbound</div>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             SECTION 2 — Platform Health
+             ============================================================ -->
+        <div class="section-title">
+            <span class="icon">&#9881;</span> Platform Health — Infrastructure Status
+        </div>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="label">CPU Usage</div>
+                <div class="value">{system["cpu_usage_percent"]}<span class="unit">%</span></div>
+                <div class="progress-bar">
+                    <div class="fill fill-{cpu_class}" style="width:{system["cpu_usage_percent"]}%"></div>
                 </div>
             </div>
-            <h3>Derniers mouvements enregistrés</h3>
+            <div class="metric-card">
+                <div class="label">Memory Usage</div>
+                <div class="value">{system["memory_usage_percent"]}<span class="unit">%</span></div>
+                <div class="progress-bar">
+                    <div class="fill fill-{mem_class}" style="width:{system["memory_usage_percent"]}%"></div>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="label">Memory Usage</div>
+                <div class="value">{system["memory_usage_percent"]}<span class="unit">%</span></div>
+                <div class="progress-bar">
+                    <div class="fill fill-{mem_class}" style="width:{system["memory_usage_percent"]}%"></div>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="label">Active Instances</div>
+                <div class="value">{system["active_instances"]}<span class="unit">nodes</span></div>
+                <div class="sub">EC2 serving traffic</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">S3 Storage</div>
+                <div class="value">{system["s3_storage_mb"]}<span class="unit">MB</span></div>
+                <div class="sub">Traffic logs bucket</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">API Latency (P95)</div>
+                <div class="value">{system["api_latency_p95_seconds"]}<span class="unit">s</span></div>
+                <div class="sub">Response time</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">Overall Status</div>
+                <div class="value" style="color: {overall_color}">
+                    {system["overall_status"].upper()}
+                </div>
+                <div class="sub">Platform health</div>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             SECTION 3 — Traffic Flow Chart
+             ============================================================ -->
+        <div class="section-title">
+            <span class="icon">&#9881;</span> Truck Traffic Flow — Last 24 Hours
+        </div>
+        <div class="chart-wrapper">
+            <canvas id="trafficChart"></canvas>
+        </div>
+
+        <!-- ============================================================
+             SECTION 4 — Recent Movements
+             ============================================================ -->
+        <div class="section-title">
+            <span class="icon">&#9881;</span> Recent Movements — Live Feed
+        </div>
+        <div class="table-wrapper">
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
-                        <th>Plaque</th>
-                        <th>Statut</th>
-                        <th>Heure d'entrée</th>
+                        <th>Truck ID</th>
+                        <th>License Plate</th>
+                        <th>Status</th>
+                        <th>Timestamp</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -406,12 +763,78 @@ async def dashboard() -> HTMLResponse:
                 </tbody>
             </table>
         </div>
-        <footer>
-            Lafarge Site Meknès &mdash; Truck Traffic Management System v{APP_VERSION}
-        </footer>
-    </body>
-    </html>
-    """
+    </div>
+
+    <footer class="footer">
+        Lafarge Site Operations &mdash; Meknès Industrial Platform &mdash; Truck Traffic Management System v{APP_VERSION}
+    </footer>
+
+    <div class="last-updated" id="lastUpdated"></div>
+
+    <script>
+        // ---- Traffic flow chart ----
+        const trafficData = {traffic_json};
+        const hours = trafficData.map(d => String(d.hour).padStart(2, '0') + ':00');
+        const entries = trafficData.map(d => d.entries);
+
+        const ctx = document.getElementById('trafficChart').getContext('2d');
+        new Chart(ctx, {{
+            type: 'line',
+            data: {{
+                labels: hours,
+                datasets: [{{
+                    label: 'Truck Entries',
+                    data: entries,
+                    borderColor: '#EE7203',
+                    backgroundColor: 'rgba(238,114,3,0.08)',
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: '#EE7203',
+                    fill: true,
+                    tension: 0.3,
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {{
+                    legend: {{ display: false }},
+                    tooltip: {{
+                        backgroundColor: '#1e293b',
+                        titleColor: '#f1f5f9',
+                        bodyColor: '#94a3b8',
+                        borderColor: '#2d3a4e',
+                        borderWidth: 1,
+                        padding: 12,
+                        cornerRadius: 8,
+                    }}
+                }},
+                scales: {{
+                    x: {{
+                        grid: {{ color: 'rgba(45,58,78,0.3)', drawBorder: false }},
+                        ticks: {{ color: '#64748b', font: {{ size: 11 }} }}
+                    }},
+                    y: {{
+                        beginAtZero: true,
+                        grid: {{ color: 'rgba(45,58,78,0.3)', drawBorder: false }},
+                        ticks: {{ color: '#64748b', font: {{ size: 11 }} }}
+                    }}
+                }},
+                interaction: {{
+                    intersect: false,
+                    mode: 'index',
+                }}
+            }}
+        }});
+
+        // ---- Last-updated timestamp ----
+        document.getElementById('lastUpdated').textContent =
+            'Last updated: ' + new Date().toLocaleTimeString('en-GB', {{ hour12: false }});
+    </script>
+</body>
+</html>
+"""
     return HTMLResponse(content=html_content, status_code=200)
 
 
@@ -421,6 +844,53 @@ async def dashboard() -> HTMLResponse:
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+# --------------------------------------------------------------------------
+# Route : JSON metrics for dashboard real-time updates
+# --------------------------------------------------------------------------
+@app.get("/api/metrics")
+async def api_metrics():
+    s3 = _get_s3_service()
+    monitoring = _get_monitoring_service()
+
+    try:
+        logs = s3.list_truck_logs()
+    except Exception:
+        logs = []
+
+    if not logs and TRUCKS_REGISTRY:
+        for truck_id, truck in TRUCKS_REGISTRY.items():
+            event = "truck_entry" if truck["status"] == "on_site" else "truck_exit"
+            logs.append(
+                {
+                    "truck_id": truck_id,
+                    "license_plate": truck["plate"],
+                    "event": event,
+                    "event_time": truck["entry_time"],
+                }
+            )
+
+    trucks_count = len(logs)
+    trucks_on_site = sum(
+        1 for t in logs if t.get("event") == "truck_entry" and not t.get("exit_time")
+    )
+    entries_today = sum(1 for t in logs if t.get("event") == "truck_entry")
+    exits_today = sum(1 for t in logs if t.get("event") == "truck_exit")
+
+    system = monitoring.get_system_status()
+    traffic_history = monitoring.get_traffic_history()
+
+    return {
+        "business": {
+            "total_trucks": trucks_count,
+            "trucks_on_site": trucks_on_site,
+            "entries_today": entries_today,
+            "exits_today": exits_today,
+        },
+        "platform": system,
+        "traffic_history": traffic_history,
+    }
 
 
 # --------------------------------------------------------------------------

@@ -31,7 +31,7 @@ def test_dashboard_shows_empty_state_and_version():
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Aucun camion enregistré pour le moment" in response.text
+    assert "No trucks recorded yet" in response.text
     assert f"v{APP_VERSION}" in response.text
 
 
@@ -60,9 +60,12 @@ def test_truck_enter_and_exit_flow():
 
 
 def test_running_app_module_as_main_invokes_uvicorn():
-    with patch("uvicorn.run") as mock_run, patch(
-        "prometheus_client.registry.REGISTRY.register",
-        side_effect=lambda collector: None,
+    with (
+        patch("uvicorn.run") as mock_run,
+        patch(
+            "prometheus_client.registry.REGISTRY.register",
+            side_effect=lambda collector: None,
+        ),
     ):
         runpy.run_module("app.app", run_name="__main__")
 
