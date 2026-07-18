@@ -114,7 +114,41 @@ jobs:
           terraform apply -auto-approve
       - name: Refresh AWS ASG
         run: |
-          aws autoscaling start-instance-refresh --auto-scaling-group-name lafarge-truck-traffic-asg --region eu-west-3 || echo "Instance refresh already in progress, skipping..."
+          ASG_NAME="lafarge-truck-traffic-asg"
+          REGION="eu-west-3"
+          MAX_WAIT_MINUTES=15
+
+          # Check if a refresh is already in progress
+          IN_PROGRESS=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --region "$REGION" \
+            --query "InstanceRefreshes[?Status=='InProgress' || Status=='Pending'].InstanceRefreshId" \
+            --output text)
+
+          if [ -n "$IN_PROGRESS" ]; then
+            echo "Instance refresh $IN_PROGRESS is already in progress. Waiting for it to complete..."
+            END=$((SECONDS + MAX_WAIT_MINUTES * 60))
+            while [ $SECONDS -lt $END ]; do
+              STATUS=$(aws autoscaling describe-instance-refreshes \
+                --auto-scaling-group-name "$ASG_NAME" \
+                --region "$REGION" \
+                --instance-refresh-ids "$IN_PROGRESS" \
+                --query "InstanceRefreshes[0].Status" \
+                --output text)
+              echo "  Current status: $STATUS"
+              if [ "$STATUS" = "Successful" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+                break
+              fi
+              sleep 15
+            done
+            echo "Previous refresh finished with status: $STATUS"
+          fi
+
+          # Start a new instance refresh
+          echo "Triggering new instance refresh..."
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --region "$REGION"
 
       - name: Discord notification
         if: always()
