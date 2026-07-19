@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -ex
 
 # =============================================================================
 # Bootstrap: system update & Docker installation
@@ -74,14 +74,16 @@ COMPOSE
 
 # Pull de la dernière image Docker puis démarrage des services
 docker compose -f /opt/docker-compose.yml pull || true
-docker compose -f /opt/docker-compose.yml up -d
+
+# Lancement des conteneurs (ne pas bloquer le script si ça échoue)
+docker compose -f /opt/docker-compose.yml up -d || echo "⚠️ docker compose up failed (exit $?)"
 
 # Diagnostic : statut des conteneurs
-sleep 5
+sleep 8
 echo "=== Container Status ==="
 docker ps -a
 echo "=== App Health Check (port 80) ==="
-curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:80/healthz || echo "curl failed"
+curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:80/healthz || echo "⚠️ Health check failed (app not responding)"
 
 # =============================================================================
 # Node Exporter : monitoring Prometheus (hors Docker pour accès direct host)
