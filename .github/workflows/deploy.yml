@@ -10,20 +10,16 @@ jobs:
   # Job 1: الاختبار والأمان
   test-and-scan:
     runs-on: ubuntu-latest
-    services:
-      localstack:
-        image: localstack/localstack:latest
-        ports:
-          - 4566:4566
-        env:
-          AWS_DEFAULT_REGION: eu-west-3
-        options: >-
-          --health-cmd "curl -f http://localhost:4566/_localstack/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Start LocalStack Docker Container
+        run: |
+          docker run -d -p 4566:4566 --name localstack localstack/localstack:latest
+          echo "Waiting for LocalStack to be ready..."
+          until curl -s http://localhost:4566/_localstack/health | grep -q '"s3": "available"\|"s3": "running"'; do
+            sleep 2
+          done
+          echo "LocalStack S3 is ready!"
       - name: Setup Python
         uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c
         with:
