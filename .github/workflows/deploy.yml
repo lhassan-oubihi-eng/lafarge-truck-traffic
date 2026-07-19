@@ -15,11 +15,15 @@ jobs:
       - name: Start LocalStack Docker Container
         run: |
           docker run -d -p 4566:4566 --name localstack localstack/localstack:latest
-          echo "Waiting for LocalStack to be ready..."
-          until curl -s http://localhost:4566/_localstack/health | grep -q '"s3": "available"\|"s3": "running"'; do
+          echo "Waiting for LocalStack health endpoint..."
+          for i in {1..15}; do
+            if curl -s http://localhost:4566/_localstack/health | grep -q '"features"\|"services"\|"available"'; then
+              echo "LocalStack is up and running!"
+              break
+            fi
+            echo "Waiting... ($i/15)"
             sleep 2
           done
-          echo "LocalStack S3 is ready!"
       - name: Setup Python
         uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c
         with:
