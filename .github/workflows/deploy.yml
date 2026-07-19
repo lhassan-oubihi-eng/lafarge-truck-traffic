@@ -116,9 +116,9 @@ jobs:
         run: |
           ASG_NAME="lafarge-truck-traffic-asg"
           REGION="eu-west-3"
-          MAX_WAIT_MINUTES=15
 
-          # Check if a refresh is already in progress
+          # Cancel any stuck instance refresh so a new one can start
+          echo "Checking for in-progress instance refreshes..."
           IN_PROGRESS=$(aws autoscaling describe-instance-refreshes \
             --auto-scaling-group-name "$ASG_NAME" \
             --region "$REGION" \
@@ -126,22 +126,11 @@ jobs:
             --output text)
 
           if [ -n "$IN_PROGRESS" ]; then
-            echo "Instance refresh $IN_PROGRESS is already in progress. Waiting for it to complete..."
-            END=$((SECONDS + MAX_WAIT_MINUTES * 60))
-            while [ $SECONDS -lt $END ]; do
-              STATUS=$(aws autoscaling describe-instance-refreshes \
-                --auto-scaling-group-name "$ASG_NAME" \
-                --region "$REGION" \
-                --instance-refresh-ids "$IN_PROGRESS" \
-                --query "InstanceRefreshes[0].Status" \
-                --output text)
-              echo "  Current status: $STATUS"
-              if [ "$STATUS" = "Successful" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
-                break
-              fi
-              sleep 15
-            done
-            echo "Previous refresh finished with status: $STATUS"
+            echo "Cancelling stuck refresh: $IN_PROGRESS"
+            aws autoscaling cancel-instance-refresh \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --region "$REGION" || true
+            sleep 10
           fi
 
           # Start a new instance refresh
