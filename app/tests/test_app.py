@@ -36,10 +36,12 @@ def test_dashboard_shows_empty_state_and_version():
 
 
 def test_list_trucks_returns_empty_list():
-    response = client.get("/api/trucks")
+    with patch("app.app._get_s3_service") as mock_s3:
+        mock_s3.return_value.list_truck_logs.return_value = []
+        response = client.get("/api/trucks")
 
-    assert response.status_code == 200
-    assert response.json() == []
+        assert response.status_code == 200
+        assert response.json() == []
 
 
 def test_truck_enter_and_exit_flow():

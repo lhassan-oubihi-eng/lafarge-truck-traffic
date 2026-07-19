@@ -144,9 +144,9 @@ resource "aws_security_group" "ec2_app" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "HTTP only from Load Balancer"
-    from_port       = 80
-    to_port         = 80
+    description     = "App traffic only from Load Balancer (target port 8000)"
+    from_port       = 8000
+    to_port         = 8000
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
@@ -327,7 +327,7 @@ resource "aws_lb" "app" {
 
 resource "aws_lb_target_group" "app" {
   name     = "${var.project_name}-tg"
-  port     = 80
+  port     = 8000
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id
 
@@ -335,6 +335,7 @@ resource "aws_lb_target_group" "app" {
     enabled             = true
     path                = "/healthz"
     protocol            = "HTTP"
+    port                = 8000
     matcher             = "200"
     interval            = 30
     timeout             = 5
@@ -349,7 +350,26 @@ resource "aws_lb_target_group" "app" {
   })
 }
 
-resource "aws_lb_listener" "http" {
+resource "aws_lb_listener" "http_redirect" {
+  count = var.certificate_arn != null && trim(var.certificate_arn, " ") != "" ? 1 : 0
+
+  load_balancer_arn = aws_lb.app.arn
+  port               = 80
+  protocol           = "HTTP"
+
+  default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+resource "aws_lb_listener" "http_forward" {
+  count = var.certificate_arn == null || trim(var.certificate_arn, " ") == "" ? 1 : 0
+
   load_balancer_arn = aws_lb.app.arn
   port               = 80
   protocol           = "HTTP"

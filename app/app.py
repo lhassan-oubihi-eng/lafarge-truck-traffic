@@ -350,7 +350,6 @@ async def prometheus_middleware(request: Request, call_next):
 # --------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard() -> HTMLResponse:
-
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -725,18 +724,25 @@ async def api_metrics():
                 }
             )
 
-    trucks_count = len(logs)
-    trucks_on_site = sum(
-        1 for t in logs if t.get("event") == "truck_entry" and not t.get("exit_time")
-    )
-    entries_today = sum(1 for t in logs if t.get("event") == "truck_entry")
-    exits_today = sum(1 for t in logs if t.get("event") == "truck_exit")
+    sorted_logs = sorted(logs, key=lambda x: x.get("event_time", ""))
+
+    entry_ids = {
+        t.get("truck_id") for t in sorted_logs if t.get("event") == "truck_entry"
+    }
+    exit_ids = {
+        t.get("truck_id") for t in sorted_logs if t.get("event") == "truck_exit"
+    }
+    trucks_on_site = len(entry_ids - exit_ids)
+
+    trucks_count = len(sorted_logs)
+    entries_today = sum(1 for t in sorted_logs if t.get("event") == "truck_entry")
+    exits_today = sum(1 for t in sorted_logs if t.get("event") == "truck_exit")
 
     system = monitoring.get_system_status()
     traffic_history = monitoring.get_traffic_history()
 
     recent = []
-    for entry in logs[-10:][::-1]:
+    for entry in sorted_logs[-10:][::-1]:
         recent.append(
             {
                 "truck_id": entry.get("truck_id", ""),
