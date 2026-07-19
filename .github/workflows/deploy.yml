@@ -12,6 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Start LocalStack Docker Container
+        run: |
+          docker run -d -p 4566:4566 --name localstack localstack/localstack:latest
+          echo "Waiting for LocalStack health endpoint..."
+          for i in {1..15}; do
+            if curl -s http://localhost:4566/_localstack/health | grep -q '"features"\|"services"\|"available"'; then
+              echo "LocalStack is up and running!"
+              break
+            fi
+            echo "Waiting... ($i/15)"
+            sleep 2
+          done
       - name: Setup Python
         uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c
         with:
@@ -23,7 +35,17 @@ jobs:
           python -m pip install --only-binary=:all: pip==24.0
           if [ -f app/requirements.txt ]; then pip install --no-cache-dir --only-binary=:all: -r app/requirements.txt; fi
           pip install --no-cache-dir --only-binary=:all: pytest==8.3.2 httpx==0.27.0 pytest-cov==5.0.0
+      - name: Create mock S3 bucket in LocalStack
+        run: |
+          pip install --no-cache-dir --only-binary=:all: awscli==1.36.24
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://truck-traffic-logs || true
       - name: Run Tests
+        env:
+          AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test  # pragma: allowlist secret
+          AWS_DEFAULT_REGION: eu-west-3
+          S3_BUCKET_NAME: truck-traffic-logs
         run: PYTHONPATH=$PYTHONPATH:. pytest --cov=app --cov-report=xml app/tests/
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

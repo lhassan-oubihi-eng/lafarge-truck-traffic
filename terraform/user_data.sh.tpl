@@ -67,7 +67,7 @@ services:
     container_name: truck-traffic-app
     restart: unless-stopped
     ports:
-      - "80:8000"
+      - "8000:8000"
     environment:
       - DB_HOST=mysql-db
       - DB_PORT=3306
