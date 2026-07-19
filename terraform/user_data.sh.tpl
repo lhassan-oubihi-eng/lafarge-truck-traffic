@@ -72,8 +72,16 @@ volumes:
   mysql_data:
 COMPOSE
 
-# Démarrage de tous les services via docker-compose
+# Pull de la dernière image Docker puis démarrage des services
+docker compose -f /opt/docker-compose.yml pull || true
 docker compose -f /opt/docker-compose.yml up -d
+
+# Diagnostic : statut des conteneurs
+sleep 5
+echo "=== Container Status ==="
+docker ps -a
+echo "=== App Health Check (port 80) ==="
+curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:80/healthz || echo "curl failed"
 
 # =============================================================================
 # Node Exporter : monitoring Prometheus (hors Docker pour accès direct host)
