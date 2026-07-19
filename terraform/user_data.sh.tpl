@@ -5,10 +5,19 @@ set -ex
 # Bootstrap: system update & Docker installation
 # =============================================================================
 dnf update -y
-dnf install -y docker docker-compose-plugin
+dnf install -y docker
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ec2-user
+
+# =============================================================================
+# Docker Compose: install via GitHub binary (AL2023 lacks docker-compose-plugin)
+# =============================================================================
+ARCH=$(uname -m)
+curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$${ARCH}" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+mkdir -p /usr/libexec/docker/cli-plugins
+ln -sf /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins/docker-compose
 
 # =============================================================================
 # Docker Compose: orchestre l'application, MySQL et WordPress
