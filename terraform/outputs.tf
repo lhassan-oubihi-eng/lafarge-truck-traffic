@@ -27,3 +27,8 @@ output "ec2_security_group_id" {
   description = "ID du Security Group des instances applicatives"
   value       = aws_security_group.ec2_app.id
 }
+
+output "certificate_arn" {
+  description = "ARN du certificat ACM utilisé pour le listener HTTPS (null si non configuré)"
+  value       = var.certificate_arn
+}
