@@ -191,3 +191,85 @@ def test_load_runtime_secrets_raises_on_missing_env():
     finally:
         if original is not None:
             os.environ["DB_HOST"] = original
+
+
+def test_get_secret_safely_returns_secret_data():
+    with patch("app.app.boto3.session.Session") as mock_session_cls:
+        mock_client = mock_session_cls.return_value.client.return_value
+        mock_client.get_secret_value.return_value = {
+            "SecretString": '{"DB_HOST": "localhost", "DB_PORT": "5432"}'
+        }
+        result = get_secret_safely("test-secret")
+        assert result == {"DB_HOST": "localhost", "DB_PORT": "5432"}
+
+
+def test_load_runtime_secrets_success():
+    load_runtime_secrets.cache_clear()
+    with (
+        patch("app.app.get_secret_safely", return_value={}),
+        patch.dict(
+            os.environ,
+            {
+                "DB_HOST": "localhost",
+                "DB_PORT": "5432",
+                "DB_NAME": "testdb",
+                "DB_USER": "testuser",
+                "DB_PASSWORD": "testpass",  # pragma: allowlist secret
+                "AWS_ACCESS_KEY_ID": "",
+                "AWS_SECRET_ACCESS_KEY": "",
+            },
+        ),
+    ):
+        result = load_runtime_secrets()
+        assert result["DB_HOST"] == "localhost"
+        assert result["DB_PORT"] == "5432"
+        assert result["DB_NAME"] == "testdb"
+        assert os.environ["DB_HOST"] == "localhost"
+
+
+def test_seed_mock_data_populates_registry():
+    TRUCKS_REGISTRY.clear()
+    _seed_mock_data(count=5)
+    assert len(TRUCKS_REGISTRY) == 5
+    for truck_id, truck in TRUCKS_REGISTRY.items():
+        assert truck["status"] == "on_site"
+        assert truck["exit_time"] is None
+
+
+def test_api_metrics_with_s3_logs_computes_counts():
+    with patch("app.app._get_s3_service") as mock_s3:
+        mock_instance = mock_s3.return_value
+        mock_instance.list_truck_logs.return_value = [
+            {
+                "event": "truck_entry",
+                "truck_id": "t1",
+                "license_plate": "PL-1",
+                "event_time": "2026-07-20T10:00:00",
+                "gate_id": "GATE-A",
+                "status": "APPROVED",
+            },
+            {
+                "event": "truck_entry",
+                "truck_id": "t2",
+                "license_plate": "PL-2",
+                "event_time": "2026-07-20T11:00:00",
+                "gate_id": "GATE-A",
+                "status": "APPROVED",
+            },
+            {
+                "event": "truck_exit",
+                "truck_id": "t1",
+                "license_plate": "PL-1",
+                "event_time": "2026-07-20T12:00:00",
+                "gate_id": "GATE-A",
+                "status": "COMPLETED",
+            },
+        ]
+        TRUCKS_REGISTRY.clear()
+        response = client.get("/api/metrics")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["business"]["total_trucks"] == 3
+        assert data["business"]["trucks_on_site"] == 1
+        assert data["business"]["entries_today"] == 2
+        assert data["business"]["exits_today"] == 1
