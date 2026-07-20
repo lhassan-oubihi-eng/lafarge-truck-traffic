@@ -120,7 +120,6 @@ def load_runtime_secrets() -> dict:
         RuntimeError: If a required environment variable is missing.
     """
     db_secret_name = os.getenv("DB_SECRET_NAME", "lafarge/truck-traffic/local/db")
-    aws_secret_name = os.getenv("AWS_SECRET_NAME", "lafarge/truck-traffic/local/aws")
 
     db_secret = get_secret_safely(db_secret_name)
 
