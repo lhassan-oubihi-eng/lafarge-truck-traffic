@@ -1,8 +1,17 @@
+import os
+import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import runpy
 
-from app.app import APP_VERSION, TRUCKS_REGISTRY, app
+from app.app import (
+    APP_VERSION,
+    TRUCKS_REGISTRY,
+    app,
+    get_secret_safely,
+    load_runtime_secrets,
+    _seed_mock_data,
+)
 
 client = TestClient(app)
 
@@ -120,3 +129,65 @@ def test_truck_exit_already_exited_returns_409():
     second_exit = client.post("/api/trucks/exit", params={"truck_id": truck_id})
     assert second_exit.status_code == 409
     assert second_exit.json()["detail"] == "Camion déjà sorti"
+
+
+def test_get_secret_safely_returns_empty_on_boto_error():
+    from botocore.exceptions import ClientError
+
+    with patch("app.app.boto3.session.Session") as mock_session_cls:
+        mock_client = mock_session_cls.return_value.client.return_value
+        mock_client.get_secret_value.side_effect = ClientError(
+            {"Error": {"Code": "ResourceNotFoundException"}}, "get_secret_value"
+        )
+        result = get_secret_safely("test-secret")
+        assert result == {}
+
+
+def test_seed_mock_data_noop_when_registry_not_empty():
+    TRUCKS_REGISTRY.clear()
+    client.post("/api/trucks/enter", params={"plate": "TEST-001"})
+    assert len(TRUCKS_REGISTRY) == 1
+    _seed_mock_data(count=12)
+    assert len(TRUCKS_REGISTRY) == 1
+
+
+def test_api_metrics_s3_error_falls_back_to_registry():
+    with patch("app.app._get_s3_service") as mock_s3:
+        mock_s3.return_value.list_truck_logs.side_effect = Exception("S3 down")
+        TRUCKS_REGISTRY.clear()
+        client.post("/api/trucks/enter", params={"plate": "FALLBACK-001"})
+        response = client.get("/api/metrics")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["business"]["total_trucks"] >= 1
+
+
+def test_truck_exit_resolves_plate_from_s3_entry_log():
+    with patch("app.app._get_s3_service") as mock_s3:
+        mock_instance = mock_s3.return_value
+        mock_instance.list_truck_logs.return_value = [
+            {
+                "event": "truck_entry",
+                "truck_id": "s3-truck-001",
+                "license_plate": "S3-0001",
+                "event_time": "2026-07-20T12:00:00",
+                "gate_id": "GATE-A",
+                "status": "APPROVED",
+            }
+        ]
+        TRUCKS_REGISTRY.clear()
+        response = client.post("/api/trucks/exit", params={"truck_id": "s3-truck-001"})
+        assert response.status_code == 200
+        assert response.json()["message"] == "Sortie du camion enregistrée"
+
+
+def test_load_runtime_secrets_raises_on_missing_env():
+    original = os.environ.pop("DB_HOST", None)
+    try:
+        load_runtime_secrets.cache_clear()
+        with patch("app.app.get_secret_safely", return_value={}):
+            with pytest.raises(RuntimeError, match="DB_HOST"):
+                load_runtime_secrets()
+    finally:
+        if original is not None:
+            os.environ["DB_HOST"] = original
