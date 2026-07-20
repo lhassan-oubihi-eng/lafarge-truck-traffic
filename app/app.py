@@ -14,6 +14,7 @@ Expose :
 import json
 import os
 import random
+import secrets
 import time
 import threading
 import uuid
@@ -122,7 +123,6 @@ def load_runtime_secrets() -> dict:
     aws_secret_name = os.getenv("AWS_SECRET_NAME", "lafarge/truck-traffic/local/aws")
 
     db_secret = get_secret_safely(db_secret_name)
-    aws_secret = get_secret_safely(aws_secret_name)
 
     def _require(key: str, source: dict | None = None) -> str:
         """Get value from source dict or env, raise if missing."""
@@ -218,9 +218,12 @@ def _start_mock_simulation(interval_range: tuple = (30, 60)):
         global MOCK_SIMULATION_ACTIVE
         MOCK_SIMULATION_ACTIVE = True
         while True:
-            delay = random.randint(*interval_range)
+            delay = (
+                secrets.randbelow(interval_range[1] - interval_range[0] + 1)
+                + interval_range[0]
+            )
             time.sleep(delay)
-            plate = random.choice(MOCK_PLATES)
+            plate = secrets.choice(MOCK_PLATES)
             truck_id = str(uuid.uuid4())
             now_iso = datetime.now(timezone.utc).isoformat()
             TRUCKS_REGISTRY[truck_id] = {

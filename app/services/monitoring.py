@@ -6,6 +6,7 @@ and exposes them for the dashboard and Prometheus scraping.
 
 import os
 import random
+import secrets
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -66,7 +67,7 @@ class MonitoringService:
         return round(value, 1)
 
     def get_active_instances(self) -> int:
-        return random.choice([2, 2, 3, 3, 3, 4])
+        return secrets.SystemRandom().choice([2, 2, 3, 3, 3, 4])
 
     def get_s3_storage_usage_mb(self) -> float:
         base_mb = 128.0
@@ -80,11 +81,10 @@ class MonitoringService:
     def get_traffic_history(self, hours: int = 24) -> list[dict]:
         now = datetime.now(timezone.utc)
         data = []
-        base_count = random.randint(5, 12)
+        base_count = secrets.SystemRandom().randint(5, 12)
         for i in range(hours):
             # Simulate diurnal pattern: more traffic during day (8-18)
             hour = (now - timedelta(hours=hours - 1 - i)).hour
-            multiplier = 1.0
             if 8 <= hour <= 12:
                 multiplier = random.uniform(1.5, 2.5)
             elif 13 <= hour <= 18:
