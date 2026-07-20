@@ -11,9 +11,7 @@ WORKDIR /app
 
 # Installation des dépendances (couche mise en cache séparément du code)
 COPY requirements.txt .
-# NOSONAR
-RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt \
-    || pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip setuptools wheel && pip install --only-binary :all: -r requirements.txt
 
 # Copie du code applicatif
 COPY app.py .

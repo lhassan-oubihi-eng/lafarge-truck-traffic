@@ -86,6 +86,7 @@ jobs:
             -Dsonar.terraform.provider.aws.version=5.0
             -Dsonar.coverage.exclusions=**/*.tf,terraform/**/*.tf,**/Dockerfile,**/tests/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.qualitygate.wait=true
 
   # Job 3: بناء ورفع Docker
   docker:
