@@ -107,7 +107,7 @@ while [ $ATTEMPT -le $MAX_RETRIES ]; do
     echo "[INFO] Docker images pulled successfully (attempt $ATTEMPT)"
     break
   fi
-  echo "[WARN] docker compose pull failed (attempt $ATTEMPT/$MAX_RETRIES), retrying in ${RETRY_DELAY}s..."
+  echo "[WARN] docker compose pull failed (attempt $ATTEMPT/$MAX_RETRIES), retrying in $RETRY_DELAY seconds..."
   sleep $RETRY_DELAY
   ATTEMPT=$((ATTEMPT + 1))
 done
@@ -118,7 +118,7 @@ while [ $ATTEMPT -le $MAX_RETRIES ]; do
     echo "[INFO] Docker containers started successfully (attempt $ATTEMPT)"
     break
   fi
-  echo "[WARN] docker compose up failed (attempt $ATTEMPT/$MAX_RETRIES), retrying in ${RETRY_DELAY}s..."
+  echo "[WARN] docker compose up failed (attempt $ATTEMPT/$MAX_RETRIES), retrying in $RETRY_DELAY seconds..."
   sleep $RETRY_DELAY
   ATTEMPT=$((ATTEMPT + 1))
 done
