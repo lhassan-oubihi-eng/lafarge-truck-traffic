@@ -145,12 +145,12 @@ jobs:
           ASG_NAME="lafarge-truck-traffic-asg"
           REGION="eu-west-3"
 
-          # Cancel any stuck instance refresh so a new one can start
-          echo "Checking for in-progress instance refreshes..."
+          # Cancel any in-progress instance refresh and wait for full completion
+          echo "Checking for in-progress or pending instance refreshes..."
           IN_PROGRESS=$(aws autoscaling describe-instance-refreshes \
             --auto-scaling-group-name "$ASG_NAME" \
             --region "$REGION" \
-            --query "InstanceRefreshes[?Status=='InProgress' || Status=='Pending'].InstanceRefreshId" \
+            --query "InstanceRefreshes[?Status=='InProgress' || Status=='Pending' || Status=='Cancelling'].InstanceRefreshId" \
             --output text)
 
           if [ -n "$IN_PROGRESS" ]; then
@@ -158,7 +158,21 @@ jobs:
             aws autoscaling cancel-instance-refresh \
               --auto-scaling-group-name "$ASG_NAME" \
               --region "$REGION" || true
-            sleep 10
+            # Wait for cancellation to fully complete (up to 5 minutes)
+            echo "Waiting for cancellation to complete..."
+            for i in $(seq 1 30); do
+              STATUS=$(aws autoscaling describe-instance-refreshes \
+                --auto-scaling-group-name "$ASG_NAME" \
+                --region "$REGION" \
+                --query "InstanceRefreshes[0].Status" \
+                --output text)
+              if [ "$STATUS" == "Cancelled" ] || [ "$STATUS" == "Successful" ] || [ "$STATUS" == "Failed" ]; then
+                echo "Refresh is now in status: $STATUS"
+                break
+              fi
+              echo "Waiting for cancellation... ($i/30) current status: $STATUS"
+              sleep 10
+            done
           fi
 
           # Start a new instance refresh

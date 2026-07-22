@@ -293,6 +293,18 @@ resource "aws_iam_role_policy" "ec2_app" {
           # ARN pattern : tous les secrets commençant par "lafarge/truck-traffic/" dans la région courante
         ]
       },
+      {
+        Sid    = "MonitoringAccess"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:GetMetricStatistics",
+          "cloudwatch:GetMetricData",
+          "autoscaling:DescribeAutoScalingGroups",
+          "ec2:DescribeInstances",
+          "ec2:DescribeTags",
+        ]
+        Resource = ["*"]
+      },
     ]
   })
 }
@@ -539,6 +551,7 @@ resource "aws_launch_template" "app" {
     db_root_password   = var.db_root_password    # Mot de passe root de la base de données
     dockerhub_username = var.dockerhub_username  # Docker Hub username (évite rate limiting)
     dockerhub_password = var.dockerhub_password  # Docker Hub password/token
+    aws_region         = var.aws_region          # Region AWS (pour CloudWatch agent download URL)
   }))
 
   # Specifications de tags : applique automatiquement des tags aux instances créées

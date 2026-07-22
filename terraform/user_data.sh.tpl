@@ -17,6 +17,57 @@ systemctl start docker || {
 usermod -aG docker ec2-user || true
 
 # =============================================================================
+# CloudWatch Agent (for memory metrics: mem_used_percent in CWAgent namespace)
+# =============================================================================
+dnf install -y amazon-cloudwatch-agent 2>/dev/null || {
+  echo "[WARN] amazon-cloudwatch-agent install failed, trying download..."
+  CW_AGENT_URL="https://s3.${aws_region}.amazonaws.com/amazoncloudwatch-agent-${aws_region}/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm"
+  curl -fsSL -o /tmp/amazon-cloudwatch-agent.rpm "$CW_AGENT_URL" && \
+    rpm -Uvh /tmp/amazon-cloudwatch-agent.rpm || echo "[WARN] CloudWatch agent download+install failed"
+}
+
+mkdir -p /opt/aws/amazon-cloudwatch-agent/etc
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWCONFIG'
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "run_as_user": "root"
+  },
+  "metrics": {
+    "namespace": "CWAgent",
+    "metrics_collected": {
+      "mem": {
+        "measurement": ["mem_used_percent"]
+      },
+      "disk": {
+        "measurement": ["disk_used_percent"],
+        "resources": ["/"]
+      },
+      "cpu": {
+        "measurement": ["cpu_usage_active"],
+        "totalcpu": true
+      }
+    },
+    "append_dimensions": {
+      "AutoScalingGroupName": "$${aws:AutoScalingGroupName}",
+      "ImageId": "$${aws:ImageId}",
+      "InstanceId": "$${aws:InstanceId}",
+      "InstanceType": "$${aws:InstanceType}"
+    }
+  }
+}
+CWCONFIG
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config \
+  -m ec2 \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json \
+  -s || echo "[WARN] CloudWatch agent config fetch failed"
+systemctl enable amazon-cloudwatch-agent 2>/dev/null || true
+systemctl start amazon-cloudwatch-agent 2>/dev/null || true
+echo "[INFO] CloudWatch agent configured"
+
+# =============================================================================
 # Docker Hub login (avoids anonymous pull rate limits: 100 pulls/6h per IP)
 # =============================================================================
 if [ -n "${dockerhub_username}" ] && [ -n "${dockerhub_password}" ]; then
