@@ -48,22 +48,88 @@ LATENCY_HISTORY = collections.deque(maxlen=200)
 
 
 # ==============================================================================
+# BASE MONITORING SERVICE
+# ==============================================================================
+
+
+class BaseMonitoringService:
+    """Shared logic for monitoring services (traffic history + system status)."""
+
+    @property
+    def _env_config(self) -> dict:
+        raise NotImplementedError
+
+    def get_traffic_history(self, hours: int = 24) -> list[dict]:
+        now = datetime.now(timezone.utc)
+        data = []
+        base_count = random.randint(5, 12)
+        for i in range(hours):
+            hour = (now - timedelta(hours=hours - 1 - i)).hour
+            if 8 <= hour <= 12:
+                multiplier = random.uniform(1.5, 2.5)
+            elif 13 <= hour <= 18:
+                multiplier = random.uniform(1.2, 2.0)
+            elif 19 <= hour <= 22:
+                multiplier = random.uniform(0.8, 1.2)
+            else:
+                multiplier = random.uniform(0.2, 0.6)
+            count = int(base_count * multiplier * random.uniform(0.8, 1.2))
+            timestamp = (now - timedelta(hours=hours - 1 - i)).isoformat()
+            data.append({"timestamp": timestamp, "entries": count, "hour": hour})
+        return data
+
+    def get_system_status(self) -> dict:
+        cpu = self.get_cpu_usage()
+        memory = self.get_memory_usage()
+        instances = self.get_active_instances()
+        s3_mb = self.get_s3_storage_usage_mb()
+        latency = self.get_api_latency_p95()
+
+        SYSTEM_CPU_USAGE.set(cpu)
+        SYSTEM_MEMORY_USAGE.set(memory)
+        SYSTEM_ACTIVE_INSTANCES.set(instances)
+        S3_STORAGE_USAGE_BYTES.set(s3_mb * 1024 * 1024)
+        API_LATENCY_P95_SECONDS.set(latency)
+
+        status = "healthy"
+        if cpu > 85 or memory > 85:
+            status = "degraded"
+        if cpu > 95 or memory > 95:
+            status = "critical"
+
+        return {
+            "cpu_usage_percent": cpu,
+            "memory_usage_percent": memory,
+            "active_instances": instances,
+            "s3_storage_mb": s3_mb,
+            "api_latency_p95_seconds": latency,
+            "overall_status": status,
+            **self._env_config,
+        }
+
+
+# ==============================================================================
 # LOCAL MONITORING SERVICE
 # ==============================================================================
 
 
-class LocalMonitoringService:
+class LocalMonitoringService(BaseMonitoringService):
     """Metrics sourced from the local Docker environment and LocalStack."""
+
+    @property
+    def _env_config(self) -> dict:
+        return {
+            "environment": "local",
+            "node_label": "containers",
+            "node_subtitle": "Running containers",
+        }
 
     def __init__(self):
         usage, now = self._read_cpu_stat()
         self._last_cpu_time = usage
         self._last_cpu_time_monotonic = now
 
-    # -- CPU from cgroup v2 --------------------------------------------------
-
     def _read_cpu_stat(self):
-        """Read CPU usage from cgroup v2 and return (usage_usec, timestamp)."""
         try:
             with open("/sys/fs/cgroup/cpu.stat") as f:
                 for line in f:
@@ -77,17 +143,12 @@ class LocalMonitoringService:
         usage, now = self._read_cpu_stat()
         delta_usage = usage - self._last_cpu_time
         delta_time = now - self._last_cpu_time_monotonic
-
         self._last_cpu_time = usage
         self._last_cpu_time_monotonic = now
-
         if delta_time <= 0 or delta_usage <= 0:
             return 0.0
-
         cpu_pct = (delta_usage / 1_000_000) / delta_time * 100
         return round(min(cpu_pct, 100.0), 1)
-
-    # -- Memory from cgroup v2 ------------------------------------------------
 
     def _get_host_total_memory_mb(self) -> int:
         try:
@@ -116,8 +177,6 @@ class LocalMonitoringService:
             return round(current / limit_bytes * 100, 1)
         except (FileNotFoundError, IOError, OSError):
             return 0.0
-
-    # -- Active containers via Docker socket ----------------------------------
 
     def get_active_instances(self) -> int:
         if not hasattr(socket, "AF_UNIX"):
@@ -150,8 +209,6 @@ class LocalMonitoringService:
             logger.debug("Docker socket unavailable; returning 0")
             return 0
 
-    # -- S3 storage from LocalStack -------------------------------------------
-
     def get_s3_storage_usage_mb(self) -> float:
         try:
             from services.s3_service import s3_service
@@ -167,8 +224,6 @@ class LocalMonitoringService:
         except Exception:
             return 0.0
 
-    # -- API latency from sliding window --------------------------------------
-
     def observe_latency(self, duration: float):
         LATENCY_HISTORY.append(duration)
 
@@ -179,68 +234,22 @@ class LocalMonitoringService:
         idx = int(len(sorted_lat) * 0.95)
         return round(sorted_lat[min(idx, len(sorted_lat) - 1)], 3)
 
-    # -- Traffic history (simulated) ------------------------------------------
-
-    def get_traffic_history(self, hours: int = 24) -> list[dict]:
-        now = datetime.now(timezone.utc)
-        data = []
-        base_count = random.randint(5, 12)
-        for i in range(hours):
-            hour = (now - timedelta(hours=hours - 1 - i)).hour
-            if 8 <= hour <= 12:
-                multiplier = random.uniform(1.5, 2.5)
-            elif 13 <= hour <= 18:
-                multiplier = random.uniform(1.2, 2.0)
-            elif 19 <= hour <= 22:
-                multiplier = random.uniform(0.8, 1.2)
-            else:
-                multiplier = random.uniform(0.2, 0.6)
-            count = int(base_count * multiplier * random.uniform(0.8, 1.2))
-            timestamp = (now - timedelta(hours=hours - 1 - i)).isoformat()
-            data.append({"timestamp": timestamp, "entries": count, "hour": hour})
-        return data
-
-    # -- System status --------------------------------------------------------
-
-    def get_system_status(self) -> dict:
-        cpu = self.get_cpu_usage()
-        memory = self.get_memory_usage()
-        instances = self.get_active_instances()
-        s3_mb = self.get_s3_storage_usage_mb()
-        latency = self.get_api_latency_p95()
-
-        SYSTEM_CPU_USAGE.set(cpu)
-        SYSTEM_MEMORY_USAGE.set(memory)
-        SYSTEM_ACTIVE_INSTANCES.set(instances)
-        S3_STORAGE_USAGE_BYTES.set(s3_mb * 1024 * 1024)
-        API_LATENCY_P95_SECONDS.set(latency)
-
-        status = "healthy"
-        if cpu > 85 or memory > 85:
-            status = "degraded"
-        if cpu > 95 or memory > 95:
-            status = "critical"
-
-        return {
-            "cpu_usage_percent": cpu,
-            "memory_usage_percent": memory,
-            "active_instances": instances,
-            "s3_storage_mb": s3_mb,
-            "api_latency_p95_seconds": latency,
-            "overall_status": status,
-            "environment": "local",
-            "node_label": "containers",
-            "node_subtitle": "Running containers",
-        }
-
 
 # ==============================================================================
 # AWS MONITORING SERVICE
 # ==============================================================================
 
 
-class AWSMonitoringService:
+class AWSMonitoringService(BaseMonitoringService):
     """Metrics sourced from real AWS CloudWatch, EC2, S3, and ALB."""
+
+    @property
+    def _env_config(self) -> dict:
+        return {
+            "environment": "aws",
+            "node_label": "instances",
+            "node_subtitle": "EC2 serving traffic",
+        }
 
     def __init__(self):
         self._region = os.getenv("AWS_REGION", "eu-west-3")
@@ -366,56 +375,6 @@ class AWSMonitoringService:
         except Exception:
             pass
         return 0.0
-
-    def get_traffic_history(self, hours: int = 24) -> list[dict]:
-        now = datetime.now(timezone.utc)
-        data = []
-        base_count = random.randint(5, 12)
-        for i in range(hours):
-            hour = (now - timedelta(hours=hours - 1 - i)).hour
-            if 8 <= hour <= 12:
-                multiplier = random.uniform(1.5, 2.5)
-            elif 13 <= hour <= 18:
-                multiplier = random.uniform(1.2, 2.0)
-            elif 19 <= hour <= 22:
-                multiplier = random.uniform(0.8, 1.2)
-            else:
-                multiplier = random.uniform(0.2, 0.6)
-            count = int(base_count * multiplier * random.uniform(0.8, 1.2))
-            timestamp = (now - timedelta(hours=hours - 1 - i)).isoformat()
-            data.append({"timestamp": timestamp, "entries": count, "hour": hour})
-        return data
-
-    def get_system_status(self) -> dict:
-        cpu = self.get_cpu_usage()
-        memory = self.get_memory_usage()
-        instances = self.get_active_instances()
-        s3_mb = self.get_s3_storage_usage_mb()
-        latency = self.get_api_latency_p95()
-
-        SYSTEM_CPU_USAGE.set(cpu)
-        SYSTEM_MEMORY_USAGE.set(memory)
-        SYSTEM_ACTIVE_INSTANCES.set(instances)
-        S3_STORAGE_USAGE_BYTES.set(s3_mb * 1024 * 1024)
-        API_LATENCY_P95_SECONDS.set(latency)
-
-        status = "healthy"
-        if cpu > 85 or memory > 85:
-            status = "degraded"
-        if cpu > 95 or memory > 95:
-            status = "critical"
-
-        return {
-            "cpu_usage_percent": cpu,
-            "memory_usage_percent": memory,
-            "active_instances": instances,
-            "s3_storage_mb": s3_mb,
-            "api_latency_p95_seconds": latency,
-            "overall_status": status,
-            "environment": "aws",
-            "node_label": "instances",
-            "node_subtitle": "EC2 serving traffic",
-        }
 
 
 # ==============================================================================
