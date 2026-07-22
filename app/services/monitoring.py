@@ -62,8 +62,7 @@ class BaseMonitoringService:
     def get_traffic_history(self, hours: int = 24) -> list[dict]:
         now = datetime.now(timezone.utc)
         data = []
-        # NOSONAR: demo traffic data only, not security-sensitive
-        base_count = random.randint(5, 12)
+        base_count = random.randint(5, 12)  # NOSONAR
         for i in range(hours):
             hour = (now - timedelta(hours=hours - 1 - i)).hour
             if 8 <= hour <= 12:
