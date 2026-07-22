@@ -517,6 +517,18 @@ resource "aws_launch_template" "app" {
     security_groups             = [aws_security_group.ec2_app.id]  # Security group applicatif
   }
 
+  # Augmentation du volume racine : l'AMI AL2023 par défaut n'a que 2 Go,
+  # ce qui est insuffisant pour Docker + MySQL + WordPress + l'application.
+  # On passe à 30 Go gp3 pour éviter "no space left on device" lors du pull des images.
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 30
+      volume_type           = "gp3"
+      delete_on_termination = true
+    }
+  }
+
   # Script d'amorçage (user data) : s'exécute au premier démarrage de l'instance.
   # Installe Docker, Node Exporter, puis lance le conteneur de l'application.
   # Les variables sensibles (image Docker, mots de passe DB) sont injectées
