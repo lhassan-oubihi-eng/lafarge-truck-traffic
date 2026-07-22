@@ -62,18 +62,18 @@ class BaseMonitoringService:
     def get_traffic_history(self, hours: int = 24) -> list[dict]:
         now = datetime.now(timezone.utc)
         data = []
-        base_count = random.randint(5, 12)
+        base_count = random.randint(5, 12)  # NOSONAR: demo data only
         for i in range(hours):
             hour = (now - timedelta(hours=hours - 1 - i)).hour
             if 8 <= hour <= 12:
-                multiplier = random.uniform(1.5, 2.5)
+                multiplier = random.uniform(1.5, 2.5)  # NOSONAR
             elif 13 <= hour <= 18:
-                multiplier = random.uniform(1.2, 2.0)
+                multiplier = random.uniform(1.2, 2.0)  # NOSONAR
             elif 19 <= hour <= 22:
-                multiplier = random.uniform(0.8, 1.2)
+                multiplier = random.uniform(0.8, 1.2)  # NOSONAR
             else:
-                multiplier = random.uniform(0.2, 0.6)
-            count = int(base_count * multiplier * random.uniform(0.8, 1.2))
+                multiplier = random.uniform(0.2, 0.6)  # NOSONAR
+            count = int(base_count * multiplier * random.uniform(0.8, 1.2))  # NOSONAR
             timestamp = (now - timedelta(hours=hours - 1 - i)).isoformat()
             data.append({"timestamp": timestamp, "entries": count, "hour": hour})
         return data
@@ -135,7 +135,7 @@ class LocalMonitoringService(BaseMonitoringService):
                 for line in f:
                     if line.startswith("usage_usec"):
                         return int(line.split()[1]), time.monotonic()
-        except (FileNotFoundError, IOError, OSError):
+        except OSError:
             pass
         return 0, time.monotonic()
 
@@ -170,12 +170,12 @@ class LocalMonitoringService(BaseMonitoringService):
                     val = f.read().strip()
                     if val != "max":
                         limit_bytes = int(val)
-            except (ValueError, FileNotFoundError, OSError):
+            except (ValueError, OSError):
                 pass
             if limit_bytes <= 0:
                 limit_bytes = self._get_host_total_memory_mb() * 1024 * 1024
             return round(current / limit_bytes * 100, 1)
-        except (FileNotFoundError, IOError, OSError):
+        except OSError:
             return 0.0
 
     def get_active_instances(self) -> int:
@@ -199,13 +199,7 @@ class LocalMonitoringService(BaseMonitoringService):
             body = response.split(b"\r\n\r\n", 1)[1]
             containers = json.loads(body.decode())
             return len(containers)
-        except (
-            FileNotFoundError,
-            OSError,
-            socket.error,
-            json.JSONDecodeError,
-            IndexError,
-        ):
+        except (OSError, socket.error, json.JSONDecodeError, IndexError):
             logger.debug("Docker socket unavailable; returning 0")
             return 0
 
