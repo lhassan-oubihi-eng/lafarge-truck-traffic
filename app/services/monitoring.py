@@ -249,7 +249,62 @@ class AWSMonitoringService(BaseMonitoringService):
         self._region = os.getenv("AWS_REGION", "eu-west-3")
         self._asg_name = os.getenv("ASG_NAME", "lafarge-truck-traffic-asg")
         self._bucket_name = os.getenv("LOGS_BUCKET_NAME", "truck-traffic-logs")
+        self._alb_dns = os.getenv(
+            "ALB_DNS", "lafarge-truck-traffic-alb-847207221.eu-west-3.elb.amazonaws.com"
+        )
+        self._instance_id = self._fetch_instance_id()
         self._alb_arn_suffix = os.getenv("ALB_ARN_SUFFIX", "")
+        if not self._alb_arn_suffix:
+            self._alb_arn_suffix = self._discover_alb_suffix()
+
+    @staticmethod
+    def _fetch_instance_id():
+        import urllib.request
+
+        try:
+            token_req = urllib.request.Request(
+                "http://169.254.169.254/latest/api/token",
+                data=b"",
+                headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
+            )
+            token = urllib.request.urlopen(token_req, timeout=2).read().decode()
+            iid_req = urllib.request.Request(
+                "http://169.254.169.254/latest/meta-data/instance-id",
+                headers={"X-aws-ec2-metadata-token": token},
+            )
+            iid = urllib.request.urlopen(iid_req, timeout=2).read().decode().strip()
+            logger.info("AWSMonitoringService: instance_id=%s", iid)
+            return iid
+        except Exception:
+            logger.warning(
+                "AWSMonitoringService: could not fetch instance-id from IMDS"
+            )
+            return None
+
+    def _discover_alb_suffix(self):
+        from botocore.config import Config as BotoConfig
+        import boto3
+
+        try:
+            elb = boto3.client(
+                "elbv2",
+                region_name=self._region,
+                config=BotoConfig(connect_timeout=5, read_timeout=5),
+            )
+            lbs = elb.describe_load_balancers()["LoadBalancers"]
+            for lb in lbs:
+                if "lafarge" in lb["LoadBalancerName"].lower():
+                    arn = lb["LoadBalancerArn"]
+                    suffix = arn.split(":loadbalancer/", 1)[1]
+                    logger.info(
+                        "AWSMonitoringService: discovered ALB suffix=%s", suffix
+                    )
+                    return suffix
+            logger.warning("AWSMonitoringService: no matching ALB found")
+            return ""
+        except Exception as exc:
+            logger.warning("AWSMonitoringService: ALB discovery error: %s", exc)
+            return ""
 
     def _get_cw_client(self):
         from botocore.config import Config as BotoConfig
@@ -261,40 +316,55 @@ class AWSMonitoringService(BaseMonitoringService):
             config=BotoConfig(connect_timeout=5, read_timeout=5),
         )
 
+    def _instance_dimension(self):
+        if self._instance_id:
+            return [{"Name": "InstanceId", "Value": self._instance_id}]
+        return []
+
     def get_cpu_usage(self) -> float:
         try:
             cw = self._get_cw_client()
-            response = cw.get_metric_statistics(
-                Namespace="AWS/EC2",
-                MetricName="CPUUtilization",
-                Statistics=["Average"],
-                Period=300,
-                StartTime=datetime.now(timezone.utc) - timedelta(minutes=5),
-                EndTime=datetime.now(timezone.utc),
-            )
+            kwargs = {
+                "Namespace": "AWS/EC2",
+                "MetricName": "CPUUtilization",
+                "Statistics": ["Average"],
+                "Period": 300,
+                "StartTime": datetime.now(timezone.utc) - timedelta(minutes=5),
+                "EndTime": datetime.now(timezone.utc),
+            }
+            dims = self._instance_dimension()
+            if dims:
+                kwargs["Dimensions"] = dims
+            response = cw.get_metric_statistics(**kwargs)
             points = response.get("Datapoints", [])
             if points:
                 return round(max(p["Average"] for p in points), 1)
+            logger.debug("get_cpu_usage: no datapoints returned")
             return 0.0
-        except Exception:
+        except Exception as exc:
+            logger.warning("get_cpu_usage error: %s", exc)
             return 0.0
 
     def get_memory_usage(self) -> float:
         try:
             cw = self._get_cw_client()
-            response = cw.get_metric_statistics(
-                Namespace="CWAgent",
-                MetricName="mem_used_percent",
-                Statistics=["Average"],
-                Period=300,
-                StartTime=datetime.now(timezone.utc) - timedelta(minutes=5),
-                EndTime=datetime.now(timezone.utc),
-            )
+            kwargs = {
+                "Namespace": "CWAgent",
+                "MetricName": "mem_used_percent",
+                "Statistics": ["Average"],
+                "Period": 300,
+                "StartTime": datetime.now(timezone.utc) - timedelta(minutes=5),
+                "EndTime": datetime.now(timezone.utc),
+            }
+            dims = self._instance_dimension()
+            if dims:
+                kwargs["Dimensions"] = dims
+            response = cw.get_metric_statistics(**kwargs)
             points = response.get("Datapoints", [])
             if points:
                 return round(max(p["Average"] for p in points), 1)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("get_memory_usage error: %s", exc)
         return 0.0
 
     def get_active_instances(self) -> int:
@@ -350,24 +420,85 @@ class AWSMonitoringService(BaseMonitoringService):
         except Exception:
             return 0.0
 
+    def get_active_instances(self) -> int:
+        from botocore.config import Config as BotoConfig
+        import boto3
+
+        try:
+            asg = boto3.client(
+                "autoscaling",
+                region_name=self._region,
+                config=BotoConfig(connect_timeout=5, read_timeout=5),
+            )
+            response = asg.describe_auto_scaling_groups(
+                AutoScalingGroupNames=[self._asg_name]
+            )
+            groups = response.get("AutoScalingGroups", [])
+            if groups:
+                desired = groups[0].get("DesiredCapacity", 0)
+                logger.debug("get_active_instances: ASG desired=%d", desired)
+                return desired
+        except Exception as exc:
+            logger.warning("get_active_instances ASG error: %s", exc)
+        try:
+            ec2 = boto3.client(
+                "ec2",
+                region_name=self._region,
+                config=BotoConfig(connect_timeout=5, read_timeout=5),
+            )
+            response = ec2.describe_instances(
+                Filters=[{"Name": "instance-state-name", "Values": ["running"]}]
+            )
+            total = 0
+            for reservation in response.get("Reservations", []):
+                total += len(reservation.get("Instances", []))
+            logger.debug("get_active_instances: EC2 fallback total=%d", total)
+            return total
+        except Exception as exc:
+            logger.warning("get_active_instances EC2 error: %s", exc)
+            return 0
+
+    def get_s3_storage_usage_mb(self) -> float:
+        from botocore.config import Config as BotoConfig
+        import boto3
+
+        try:
+            s3 = boto3.client(
+                "s3",
+                region_name=self._region,
+                config=BotoConfig(connect_timeout=5, read_timeout=5),
+            )
+            total_bytes = 0
+            paginator = s3.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=self._bucket_name):
+                for obj in page.get("Contents", []):
+                    total_bytes += obj.get("Size", 0)
+            logger.debug("get_s3_storage: %d bytes", total_bytes)
+            return round(total_bytes / 1024 / 1024, 2)
+        except Exception as exc:
+            logger.warning("get_s3_storage error: %s", exc)
+            return 0.0
+
     def get_api_latency_p95(self) -> float:
         if not self._alb_arn_suffix:
+            logger.debug("get_api_latency: ALB_ARN_SUFFIX not set, skipping")
             return 0.0
         try:
             cw = self._get_cw_client()
             response = cw.get_metric_statistics(
                 Namespace="AWS/ApplicationELB",
                 MetricName="TargetResponseTime",
-                Statistics=["p95"],
+                ExtendedStatistics=["p95"],
                 Period=300,
                 StartTime=datetime.now(timezone.utc) - timedelta(minutes=5),
                 EndTime=datetime.now(timezone.utc),
+                Dimensions=[{"Name": "LoadBalancer", "Value": self._alb_arn_suffix}],
             )
             points = response.get("Datapoints", [])
             if points:
-                return round(max(p["p95"] for p in points), 3)
-        except Exception:
-            pass
+                return round(max(p["ExtendedStatistics"]["p95"] for p in points), 3)
+        except Exception as exc:
+            logger.warning("get_api_latency error: %s", exc)
         return 0.0
 
 

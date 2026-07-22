@@ -159,6 +159,11 @@ docker run -d \
   -e DB_NAME=wp \
   -e DB_USER=wp_user \
   -e DB_PASSWORD=${db_password} \
+  -e AWS_REGION=${aws_region} \
+  -e ALB_ARN_SUFFIX=${alb_arn_suffix} \
+  -e ALB_DNS=${alb_dns_name} \
+  -e ASG_NAME=${asg_name} \
+  -e LOGS_BUCKET_NAME=${logs_bucket_name} \
   ${app_docker_image}
 
 # =============================================================================

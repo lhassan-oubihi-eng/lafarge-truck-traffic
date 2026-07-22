@@ -546,12 +546,16 @@ resource "aws_launch_template" "app" {
   # Les variables sensibles (image Docker, mots de passe DB) sont injectées
   # depuis les variables Terraform et encodées en base64 dans les métadonnées.
   user_data = base64encode(templatefile("${path.module}/user_data.sh.tpl", {
-    app_docker_image   = var.app_docker_image    # Nom de l'image Docker de l'application
-    db_password        = var.db_password         # Mot de passe de la base de données
-    db_root_password   = var.db_root_password    # Mot de passe root de la base de données
-    dockerhub_username = var.dockerhub_username  # Docker Hub username (évite rate limiting)
-    dockerhub_password = var.dockerhub_password  # Docker Hub password/token
-    aws_region         = var.aws_region          # Region AWS (pour CloudWatch agent download URL)
+    app_docker_image   = var.app_docker_image      # Nom de l'image Docker de l'application
+    db_password        = var.db_password           # Mot de passe de la base de données
+    db_root_password   = var.db_root_password      # Mot de passe root de la base de données
+    dockerhub_username = var.dockerhub_username    # Docker Hub username (évite rate limiting)
+    dockerhub_password = var.dockerhub_password    # Docker Hub password/token
+    aws_region         = var.aws_region            # Region AWS (CloudWatch agent, env vars)
+    alb_arn_suffix     = aws_lb.app.arn_suffix     # ALB ARN suffix pour CloudWatch latency metrics
+    alb_dns_name       = aws_lb.app.dns_name       # ALB DNS name (auto-découverte fallback)
+    asg_name           = aws_autoscaling_group.app.name  # ASG name pour monitoring
+    logs_bucket_name   = "truck-traffic-logs"  # S3 bucket name (logs applicatifs)
   }))
 
   # Specifications de tags : applique automatiquement des tags aux instances créées
