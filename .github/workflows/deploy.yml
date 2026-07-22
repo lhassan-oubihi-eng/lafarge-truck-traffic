@@ -109,7 +109,9 @@ jobs:
         with:
           context: ./app
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/truck-traffic-app:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/truck-traffic-app:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/truck-traffic-app:${{ github.sha }}
 
   # Job 4: الـ Deployment
   deploy:
@@ -127,10 +129,13 @@ jobs:
         uses: hashicorp/setup-terraform@37c3618610d60f92cc57cb7f7e74c2569db0fcd6
       - name: Terraform Apply
         env:
+          TF_VAR_app_docker_image: ${{ secrets.DOCKERHUB_USERNAME }}/truck-traffic-app:${{ github.sha }}
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
           TF_VAR_db_root_password: ${{ secrets.DB_ROOT_PASSWORD }}
           TF_VAR_certificate_arn: ${{ secrets.ACM_CERTIFICATE_ARN }}
           TF_VAR_public_key_content: ${{ secrets.AWS_PUBLIC_KEY }}
+          TF_VAR_dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          TF_VAR_dockerhub_password: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           cd terraform
           terraform init

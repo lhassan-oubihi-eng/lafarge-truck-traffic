@@ -103,6 +103,19 @@ variable "tags" {
     Environment = "production"
   }
 }
+variable "dockerhub_username" {
+  description = "Docker Hub username for authenticated pulls (avoids anonymous rate limits)"
+  type        = string
+  default     = ""
+}
+
+variable "dockerhub_password" {
+  description = "Docker Hub password or token for authenticated pulls"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "db_password" {
   description = "Password for WordPress database"
   type        = string

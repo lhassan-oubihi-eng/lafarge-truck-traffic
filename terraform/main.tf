@@ -522,9 +522,11 @@ resource "aws_launch_template" "app" {
   # Les variables sensibles (image Docker, mots de passe DB) sont injectées
   # depuis les variables Terraform et encodées en base64 dans les métadonnées.
   user_data = base64encode(templatefile("${path.module}/user_data.sh.tpl", {
-    app_docker_image = var.app_docker_image  # Nom de l'image Docker de l'application
-    db_password      = var.db_password       # Mot de passe de la base de données
-    db_root_password = var.db_root_password  # Mot de passe root de la base de données
+    app_docker_image   = var.app_docker_image    # Nom de l'image Docker de l'application
+    db_password        = var.db_password         # Mot de passe de la base de données
+    db_root_password   = var.db_root_password    # Mot de passe root de la base de données
+    dockerhub_username = var.dockerhub_username  # Docker Hub username (évite rate limiting)
+    dockerhub_password = var.dockerhub_password  # Docker Hub password/token
   }))
 
   # Specifications de tags : applique automatiquement des tags aux instances créées
