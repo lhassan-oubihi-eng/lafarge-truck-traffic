@@ -148,7 +148,9 @@ def test_local_node_labels():
 # ==============================================================================
 
 
-def test_aws_get_system_status_returns_expected_structure():
+@patch("boto3.client")
+def test_aws_get_system_status_returns_expected_structure(mock_boto):
+    mock_boto.side_effect = Exception("AWS unavailable")
     svc = AWSMonitoringService()
     status = svc.get_system_status()
     assert isinstance(status, dict)
@@ -176,13 +178,17 @@ def test_aws_get_traffic_history_returns_24_entries():
         assert entry["entries"] >= 0
 
 
-def test_aws_cpu_usage_returns_zero_on_failure():
+@patch("boto3.client")
+def test_aws_cpu_usage_returns_zero_on_failure(mock_boto):
+    mock_boto.side_effect = Exception("AWS unavailable")
     svc = AWSMonitoringService()
     cpu = svc.get_cpu_usage()
     assert cpu == 0.0
 
 
-def test_aws_memory_usage_returns_zero_on_failure():
+@patch("boto3.client")
+def test_aws_memory_usage_returns_zero_on_failure(mock_boto):
+    mock_boto.side_effect = Exception("AWS unavailable")
     svc = AWSMonitoringService()
     mem = svc.get_memory_usage()
     assert mem == 0.0
@@ -204,13 +210,17 @@ def test_aws_s3_storage_returns_zero_on_failure(mock_boto):
     assert mb == 0.0
 
 
-def test_aws_api_latency_returns_zero_when_no_alb():
+@patch("boto3.client")
+def test_aws_api_latency_returns_zero_when_no_alb(mock_boto):
+    mock_boto.side_effect = Exception("AWS unavailable")
     svc = AWSMonitoringService()
     latency = svc.get_api_latency_p95()
     assert latency == 0.0
 
 
-def test_aws_node_labels():
+@patch("boto3.client")
+def test_aws_node_labels(mock_boto):
+    mock_boto.side_effect = Exception("AWS unavailable")
     svc = AWSMonitoringService()
     status = svc.get_system_status()
     assert status["node_label"] == "instances"
