@@ -252,59 +252,59 @@ class AWSMonitoringService(BaseMonitoringService):
         self._alb_dns = os.getenv(
             "ALB_DNS", "lafarge-truck-traffic-alb-847207221.eu-west-3.elb.amazonaws.com"
         )
-        self._instance_id = self._fetch_instance_id()
+        self._instance_id = None
         self._alb_arn_suffix = os.getenv("ALB_ARN_SUFFIX", "")
+
+    def _ensure_instance_id(self):
+        if self._instance_id is None:
+            import urllib.request
+
+            try:
+                token_req = urllib.request.Request(
+                    "http://169.254.169.254/latest/api/token",
+                    data=b"",
+                    headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
+                )
+                token = urllib.request.urlopen(token_req, timeout=2).read().decode()
+                iid_req = urllib.request.Request(
+                    "http://169.254.169.254/latest/meta-data/instance-id",
+                    headers={"X-aws-ec2-metadata-token": token},
+                )
+                iid = urllib.request.urlopen(iid_req, timeout=2).read().decode().strip()
+                self._instance_id = iid
+                logger.info("AWSMonitoringService: instance_id=%s", iid)
+            except Exception:
+                logger.warning(
+                    "AWSMonitoringService: could not fetch instance-id from IMDS"
+                )
+                self._instance_id = ""
+        return self._instance_id
+
+    def _ensure_alb_suffix(self):
         if not self._alb_arn_suffix:
-            self._alb_arn_suffix = self._discover_alb_suffix()
+            from botocore.config import Config as BotoConfig
+            import boto3
 
-    @staticmethod
-    def _fetch_instance_id():
-        import urllib.request
-
-        try:
-            token_req = urllib.request.Request(
-                "http://169.254.169.254/latest/api/token",
-                data=b"",
-                headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
-            )
-            token = urllib.request.urlopen(token_req, timeout=2).read().decode()
-            iid_req = urllib.request.Request(
-                "http://169.254.169.254/latest/meta-data/instance-id",
-                headers={"X-aws-ec2-metadata-token": token},
-            )
-            iid = urllib.request.urlopen(iid_req, timeout=2).read().decode().strip()
-            logger.info("AWSMonitoringService: instance_id=%s", iid)
-            return iid
-        except Exception:
-            logger.warning(
-                "AWSMonitoringService: could not fetch instance-id from IMDS"
-            )
-            return None
-
-    def _discover_alb_suffix(self):
-        from botocore.config import Config as BotoConfig
-        import boto3
-
-        try:
-            elb = boto3.client(
-                "elbv2",
-                region_name=self._region,
-                config=BotoConfig(connect_timeout=5, read_timeout=5),
-            )
-            lbs = elb.describe_load_balancers()["LoadBalancers"]
-            for lb in lbs:
-                if "lafarge" in lb["LoadBalancerName"].lower():
-                    arn = lb["LoadBalancerArn"]
-                    suffix = arn.split(":loadbalancer/", 1)[1]
-                    logger.info(
-                        "AWSMonitoringService: discovered ALB suffix=%s", suffix
-                    )
-                    return suffix
-            logger.warning("AWSMonitoringService: no matching ALB found")
-            return ""
-        except Exception as exc:
-            logger.warning("AWSMonitoringService: ALB discovery error: %s", exc)
-            return ""
+            try:
+                elb = boto3.client(
+                    "elbv2",
+                    region_name=self._region,
+                    config=BotoConfig(connect_timeout=5, read_timeout=5),
+                )
+                lbs = elb.describe_load_balancers()["LoadBalancers"]
+                for lb in lbs:
+                    if "lafarge" in lb["LoadBalancerName"].lower():
+                        arn = lb["LoadBalancerArn"]
+                        self._alb_arn_suffix = arn.split(":loadbalancer/", 1)[1]
+                        logger.info(
+                            "AWSMonitoringService: discovered ALB suffix=%s",
+                            self._alb_arn_suffix,
+                        )
+                        return self._alb_arn_suffix
+                logger.warning("AWSMonitoringService: no matching ALB found")
+            except Exception as exc:
+                logger.warning("AWSMonitoringService: ALB discovery error: %s", exc)
+        return self._alb_arn_suffix
 
     def _get_cw_client(self):
         from botocore.config import Config as BotoConfig
@@ -317,8 +317,9 @@ class AWSMonitoringService(BaseMonitoringService):
         )
 
     def _instance_dimension(self):
-        if self._instance_id:
-            return [{"Name": "InstanceId", "Value": self._instance_id}]
+        iid = self._ensure_instance_id()
+        if iid:
+            return [{"Name": "InstanceId", "Value": iid}]
         return []
 
     def get_cpu_usage(self) -> float:
@@ -480,7 +481,8 @@ class AWSMonitoringService(BaseMonitoringService):
             return 0.0
 
     def get_api_latency_p95(self) -> float:
-        if not self._alb_arn_suffix:
+        suffix = self._ensure_alb_suffix()
+        if not suffix:
             logger.debug("get_api_latency: ALB_ARN_SUFFIX not set, skipping")
             return 0.0
         try:
