@@ -62,18 +62,19 @@ class BaseMonitoringService:
     def get_traffic_history(self, hours: int = 24) -> list[dict]:
         now = datetime.now(timezone.utc)
         data = []
-        base_count = random.randint(5, 12)  # NOSONAR: demo data only
+        # NOSONAR: demo traffic data only, not security-sensitive
+        base_count = random.randint(5, 12)
         for i in range(hours):
             hour = (now - timedelta(hours=hours - 1 - i)).hour
             if 8 <= hour <= 12:
-                multiplier = random.uniform(1.5, 2.5)  # NOSONAR
+                multiplier = random.uniform(1.5, 2.5)
             elif 13 <= hour <= 18:
-                multiplier = random.uniform(1.2, 2.0)  # NOSONAR
+                multiplier = random.uniform(1.2, 2.0)
             elif 19 <= hour <= 22:
-                multiplier = random.uniform(0.8, 1.2)  # NOSONAR
+                multiplier = random.uniform(0.8, 1.2)
             else:
-                multiplier = random.uniform(0.2, 0.6)  # NOSONAR
-            count = int(base_count * multiplier * random.uniform(0.8, 1.2))  # NOSONAR
+                multiplier = random.uniform(0.2, 0.6)
+            count = int(base_count * multiplier * random.uniform(0.8, 1.2))
             timestamp = (now - timedelta(hours=hours - 1 - i)).isoformat()
             data.append({"timestamp": timestamp, "entries": count, "hour": hour})
         return data
@@ -156,7 +157,7 @@ class LocalMonitoringService(BaseMonitoringService):
                 for line in f:
                     if line.startswith("MemTotal:"):
                         return int(line.split()[1]) // 1024
-        except (FileNotFoundError, IOError, OSError):
+        except OSError:
             pass
         return 8192
 
