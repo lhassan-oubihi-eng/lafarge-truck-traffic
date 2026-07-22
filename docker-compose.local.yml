@@ -17,6 +17,11 @@ services:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=us-east-1
+      - DB_HOST=db.local
+      - DB_PORT=5432
+      - DB_NAME=truck_traffic
+      - DB_USER=admin
+      - DB_PASSWORD=changeme
     volumes:
       - localstack_data:/var/lib/localstack
       - ./localstack-init:/etc/localstack/init/ready.d
@@ -32,6 +37,8 @@ services:
       dockerfile: Dockerfile.local
     container_name: truck-traffic-app-local
     restart: unless-stopped
+    group_add:
+      - "0"
     depends_on:
       - localstack
     ports:
@@ -43,6 +50,13 @@ services:
       - AWS_ENDPOINT_URL=http://localstack:4566
       - DB_SECRET_NAME=lafarge/truck-traffic/local/db
       - AWS_SECRET_NAME=lafarge/truck-traffic/local/aws
+      - DB_HOST=db.local
+      - DB_PORT=5432
+      - DB_NAME=truck_traffic
+      - DB_USER=admin
+      - DB_PASSWORD=changeme
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - local-net
     healthcheck:

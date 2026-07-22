@@ -343,6 +343,13 @@ async def prometheus_middleware(request: Request, call_next):
         endpoint=endpoint,
     ).observe(duration)
 
+    try:
+        mon = _get_monitoring_service()
+        if hasattr(mon, "observe_latency"):
+            mon.observe_latency(duration)
+    except Exception:
+        pass
+
     return response
 
 
@@ -561,9 +568,9 @@ async def dashboard() -> HTMLResponse:
                 <div class="progress-bar"><div class="fill" id="memory-bar" style="width:0%"></div></div>
             </div>
             <div class="metric-card">
-                <div class="label">Active Instances</div>
+                <div class="label">Active Nodes</div>
                 <div class="value" id="active-instances"><span class="skeleton"></span></div>
-                <div class="sub">EC2 serving traffic</div>
+                <div class="sub" id="node-subtitle">Loading...</div>
             </div>
             <div class="metric-card">
                 <div class="label">S3 Storage</div>
@@ -626,7 +633,8 @@ async def dashboard() -> HTMLResponse:
 
             document.getElementById('cpu-usage').innerHTML = plat.cpu_usage_percent + '<span class="unit">%</span>';
             document.getElementById('memory-usage').innerHTML = plat.memory_usage_percent + '<span class="unit">%</span>';
-            document.getElementById('active-instances').innerHTML = plat.active_instances + '<span class="unit">nodes</span>';
+            document.getElementById('active-instances').innerHTML = plat.active_instances + '<span class="unit"> ' + (plat.node_label || 'nodes') + '</span>';
+            document.getElementById('node-subtitle').textContent = plat.node_subtitle || 'Active nodes';
             document.getElementById('s3-storage').innerHTML = plat.s3_storage_mb + '<span class="unit">MB</span>';
             document.getElementById('api-latency').innerHTML = plat.api_latency_p95_seconds + '<span class="unit">s</span>';
 
