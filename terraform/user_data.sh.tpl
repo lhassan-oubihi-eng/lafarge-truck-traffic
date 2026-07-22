@@ -24,109 +24,96 @@ if [ -n "${dockerhub_username}" ] && [ -n "${dockerhub_password}" ]; then
 fi
 
 # =============================================================================
-# Docker Compose: install if missing
+# Network: create shared bridge for inter-container communication
 # =============================================================================
-if ! docker compose version &>/dev/null && ! command -v docker-compose &>/dev/null; then
-  ARCH=$(uname -m)
-  echo "[INFO] Downloading docker-compose binary from GitHub..."
-  curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$${ARCH}" -o /usr/local/bin/docker-compose || echo "[ERROR] docker-compose download failed (rate limited or network issue)"
-  if [ -f /usr/local/bin/docker-compose ] && [ -s /usr/local/bin/docker-compose ]; then
-    chmod +x /usr/local/bin/docker-compose
-    mkdir -p /usr/libexec/docker/cli-plugins
-    ln -sf /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins/docker-compose || true
-  fi
-fi
+docker network create app_network 2>/dev/null || true
 
 # =============================================================================
-# Docker Compose: orchestre l'application, MySQL et WordPress
-# =============================================================================
-cat > /opt/docker-compose.yml <<'COMPOSE'
-version: "3.9"
-
-services:
-  mysql-db:
-    image: mysql:8.0
-    container_name: mysql-db
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${db_root_password}
-      MYSQL_DATABASE: wp
-      MYSQL_USER: wp_user
-      MYSQL_PASSWORD: ${db_password}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  wordpress:
-    image: wordpress:latest
-    container_name: wordpress
-    restart: unless-stopped
-    ports:
-      - "8080:80"
-    environment:
-      WORDPRESS_DB_HOST: mysql-db
-      WORDPRESS_DB_USER: wp_user
-      WORDPRESS_DB_PASSWORD: ${db_password}
-      WORDPRESS_DB_NAME: wp
-    depends_on:
-      mysql-db:
-        condition: service_healthy
-
-  truck-traffic-app:
-    image: ${app_docker_image}
-    container_name: truck-traffic-app
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    environment:
-      - DB_HOST=mysql-db
-      - DB_PORT=3306
-      - DB_NAME=wp
-      - DB_USER=wp_user
-      - DB_PASSWORD=${db_password}
-    depends_on:
-      - mysql-db
-
-volumes:
-  mysql_data:
-COMPOSE
-
-# =============================================================================
-# Pull Docker images (with retries) then start containers
+# Pull images (with retries)
 # =============================================================================
 MAX_RETRIES=3
 RETRY_DELAY=15
 
-ATTEMPT=1
-while [ $ATTEMPT -le $MAX_RETRIES ]; do
-  if docker compose -f /opt/docker-compose.yml pull; then
-    echo "[INFO] Docker images pulled successfully (attempt $ATTEMPT)"
-    break
-  fi
-  echo "[WARN] docker compose pull failed (attempt $ATTEMPT/$MAX_RETRIES), retrying in $RETRY_DELAY seconds..."
-  sleep $RETRY_DELAY
-  ATTEMPT=$((ATTEMPT + 1))
-done
+pull_with_retry() {
+  local IMAGE=$1
+  local ATTEMPT=1
+  while [ $ATTEMPT -le $MAX_RETRIES ]; do
+    if docker pull $IMAGE; then
+      echo "[INFO] Pulled $IMAGE successfully (attempt $ATTEMPT)"
+      return 0
+    fi
+    echo "[WARN] docker pull $IMAGE failed (attempt $ATTEMPT/$MAX_RETRIES), retrying in $RETRY_DELAY seconds..."
+    sleep $RETRY_DELAY
+    ATTEMPT=$((ATTEMPT + 1))
+  done
+  echo "[ERROR] Failed to pull $IMAGE after $MAX_RETRIES attempts"
+  return 1
+}
 
-ATTEMPT=1
-while [ $ATTEMPT -le $MAX_RETRIES ]; do
-  if docker compose -f /opt/docker-compose.yml up -d; then
-    echo "[INFO] Docker containers started successfully (attempt $ATTEMPT)"
+pull_with_retry mysql:8.0
+pull_with_retry wordpress:latest
+pull_with_retry ${app_docker_image}
+
+# =============================================================================
+# Container: MySQL
+# =============================================================================
+docker rm -f mysql-db 2>/dev/null || true
+docker run -d \
+  --name mysql-db \
+  --network app_network \
+  --restart unless-stopped \
+  -e MYSQL_ROOT_PASSWORD=${db_root_password} \
+  -e MYSQL_DATABASE=wp \
+  -e MYSQL_USER=wp_user \
+  -e MYSQL_PASSWORD=${db_password} \
+  -v mysql_data:/var/lib/mysql \
+  mysql:8.0
+
+echo "[INFO] Waiting for MySQL to be healthy..."
+for i in $(seq 1 30); do
+  if docker exec mysql-db mysqladmin ping -h localhost --silent 2>/dev/null; then
+    echo "[INFO] MySQL is healthy"
     break
   fi
-  echo "[WARN] docker compose up failed (attempt $ATTEMPT/$MAX_RETRIES), retrying in $RETRY_DELAY seconds..."
-  sleep $RETRY_DELAY
-  ATTEMPT=$((ATTEMPT + 1))
+  echo "Waiting for MySQL... ($i/30)"
+  sleep 3
 done
 
 # =============================================================================
-# Diagnostic collection
+# Container: WordPress
 # =============================================================================
-sleep 8
+docker rm -f wordpress 2>/dev/null || true
+docker run -d \
+  --name wordpress \
+  --network app_network \
+  --restart unless-stopped \
+  -p 8080:80 \
+  -e WORDPRESS_DB_HOST=mysql-db \
+  -e WORDPRESS_DB_USER=wp_user \
+  -e WORDPRESS_DB_PASSWORD=${db_password} \
+  -e WORDPRESS_DB_NAME=wp \
+  wordpress:latest
+
+# =============================================================================
+# Container: Truck Traffic App
+# =============================================================================
+docker rm -f truck-traffic-app 2>/dev/null || true
+docker run -d \
+  --name truck-traffic-app \
+  --network app_network \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -e DB_HOST=mysql-db \
+  -e DB_PORT=3306 \
+  -e DB_NAME=wp \
+  -e DB_USER=wp_user \
+  -e DB_PASSWORD=${db_password} \
+  ${app_docker_image}
+
+# =============================================================================
+# Diagnostic collection & upload to S3
+# =============================================================================
+sleep 5
 INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
 DIAG_FILE=/tmp/bootstrap-diagnostic.txt
 
@@ -138,14 +125,14 @@ DIAG_FILE=/tmp/bootstrap-diagnostic.txt
   echo "=== Docker Version ==="
   docker version --format '{{.Server.Version}}' 2>/dev/null || echo "Docker not available"
   echo ""
-  echo "=== Docker Compose Version ==="
-  docker compose version 2>/dev/null || docker-compose --version 2>/dev/null || echo "Docker Compose not available"
-  echo ""
   echo "=== Container Status ==="
-  docker ps -a 2>/dev/null || echo "Cannot list containers"
+  docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || echo "Cannot list containers"
   echo ""
-  echo "=== Docker Compose Logs ==="
-  docker compose -f /opt/docker-compose.yml logs --tail=50 2>/dev/null || echo "Cannot get logs"
+  echo "=== Container Logs (mysql-db) ==="
+  docker logs mysql-db 2>&1 | tail -20
+  echo ""
+  echo "=== Container Logs (truck-traffic-app) ==="
+  docker logs truck-traffic-app 2>&1 | tail -20
   echo ""
   echo "=== App Health Check (port 8000) ==="
   curl -s -o /dev/null -w "HTTP %%{http_code}\n" http://localhost:8000/healthz || echo "Health check failed"
@@ -159,8 +146,8 @@ DIAG_FILE=/tmp/bootstrap-diagnostic.txt
   echo "=== Docker Info ==="
   docker info --format '{{.ContainersRunning}} running, {{.Containers}} total, {{.Images}} images' 2>/dev/null || echo "Docker info not available"
   echo ""
-  echo "=== Failed Systemd Services ==="
-  systemctl --failed --no-legend 2>/dev/null || echo "No failed services"
+  echo "=== Network Check ==="
+  docker network inspect app_network 2>/dev/null | grep -E '"Name|Containers' || echo "Network not found"
 } > $DIAG_FILE 2>&1
 
 aws s3 cp $DIAG_FILE "s3://truck-traffic-logs/bootstrap-$INSTANCE_ID.txt" --region eu-west-3 2>/dev/null || echo "[INFO] S3 diagnostic upload skipped"
