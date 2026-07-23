@@ -68,6 +68,17 @@ systemctl start amazon-cloudwatch-agent 2>/dev/null || true
 echo "[INFO] CloudWatch agent configured"
 
 # =============================================================================
+# Fetch instance ID via IMDSv2 (used by app for CloudWatch dimension)
+# =============================================================================
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null)
+if [ -n "$IMDS_TOKEN" ]; then
+  INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
+else
+  INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
+fi
+echo "[INFO] Instance ID: $INSTANCE_ID"
+
+# =============================================================================
 # Docker Hub login (avoids anonymous pull rate limits: 100 pulls/6h per IP)
 # =============================================================================
 if [ -n "${dockerhub_username}" ] && [ -n "${dockerhub_password}" ]; then
@@ -164,13 +175,13 @@ docker run -d \
   -e ALB_DNS=${alb_dns_name} \
   -e ASG_NAME=${asg_name} \
   -e LOGS_BUCKET_NAME=${logs_bucket_name} \
+  -e EC2_INSTANCE_ID=$${INSTANCE_ID} \
   ${app_docker_image}
 
 # =============================================================================
 # Diagnostic collection & upload to S3
 # =============================================================================
 sleep 5
-INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
 DIAG_FILE=/tmp/bootstrap-diagnostic.txt
 
 {

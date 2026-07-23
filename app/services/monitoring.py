@@ -256,7 +256,7 @@ class AWSMonitoringService(BaseMonitoringService):
         self._alb_dns = os.getenv(
             "ALB_DNS", "lafarge-truck-traffic-alb-847207221.eu-west-3.elb.amazonaws.com"
         )
-        self._instance_id = None
+        self._instance_id = os.getenv("EC2_INSTANCE_ID") or None
         self._alb_arn_suffix = os.getenv("ALB_ARN_SUFFIX", "")
 
     def _ensure_instance_id(self):  # pragma: no cover
