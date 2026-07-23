@@ -749,52 +749,25 @@ async def api_metrics():
     exits_today = sum(1 for t in sorted_logs if t.get("event") == "truck_exit")
 
     system = monitoring.get_system_status()
-    traffic_history = monitoring.get_traffic_history(logs=sorted_logs)
+    traffic_history = monitoring.get_traffic_history()
+    data_source = "demo"
 
-    has_recent_logs = False
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-    for log in sorted_logs:
-        try:
-            et = datetime.fromisoformat(log.get("event_time", ""))
-            if et.tzinfo is None:
-                et = et.replace(tzinfo=timezone.utc)
-            if et >= cutoff:
-                has_recent_logs = True
-                break
-        except (ValueError, TypeError):
-            pass
-    data_source = "real" if has_recent_logs else "demo"
-
-    if data_source == "demo":
-        recent = []
-        events = ["truck_entry"] * 7 + ["truck_exit"] * 3
-        now = datetime.now(timezone.utc)
-        for i in range(10):
-            event = secrets.choice(events)
-            plate = secrets.choice(MOCK_PLATES)
-            truck_id = str(uuid.uuid4())
-            event_time = (
-                now - timedelta(minutes=i * 2 + secrets.randbelow(2))
-            ).isoformat()
-            recent.append(
-                {
-                    "truck_id": truck_id,
-                    "license_plate": plate,
-                    "event": event,
-                    "event_time": event_time,
-                }
-            )
-    else:
-        recent = []
-        for entry in sorted_logs[-10:][::-1]:
-            recent.append(
-                {
-                    "truck_id": entry.get("truck_id", ""),
-                    "license_plate": entry.get("license_plate", ""),
-                    "event": entry.get("event", ""),
-                    "event_time": entry.get("event_time", ""),
-                }
-            )
+    recent = []
+    events = ["truck_entry"] * 7 + ["truck_exit"] * 3
+    now = datetime.now(timezone.utc)
+    for i in range(10):
+        event = secrets.choice(events)
+        plate = secrets.choice(MOCK_PLATES)
+        truck_id = str(uuid.uuid4())
+        event_time = (now - timedelta(minutes=i * 2 + secrets.randbelow(2))).isoformat()
+        recent.append(
+            {
+                "truck_id": truck_id,
+                "license_plate": plate,
+                "event": event,
+                "event_time": event_time,
+            }
+        )
 
     return {
         "data_source": data_source,

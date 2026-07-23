@@ -87,18 +87,18 @@ class BaseMonitoringService:
             for i in range(hours):
                 hour_dt = now - timedelta(hours=hours - 1 - i)
                 hour = hour_dt.hour
-                if 8 <= hour < 12:
-                    base = 4 + secrets.randbelow(9)
-                elif 13 <= hour < 18:
-                    base = 3 + secrets.randbelow(7)
-                elif 18 <= hour < 22:
-                    base = 1 + secrets.randbelow(5)
-                elif 22 <= hour or hour < 6:
+                if 7 <= hour < 12:
+                    base = 8 + secrets.randbelow(7)
+                elif 12 <= hour < 17:
+                    base = 6 + secrets.randbelow(7)
+                elif 17 <= hour < 18:
+                    base = 4 + secrets.randbelow(4)
+                elif 18 <= hour or hour < 6:
                     base = 0 + secrets.randbelow(3)
                 else:
-                    base = 2 + secrets.randbelow(5)
+                    base = 2 + secrets.randbelow(4)
                 hourly_counts[hour_dt.replace(minute=0, second=0, microsecond=0)] = max(
-                    0, base - 2 + secrets.randbelow(5)
+                    0, base - 1 + secrets.randbelow(3)
                 )
 
         data = []

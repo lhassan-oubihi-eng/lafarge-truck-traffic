@@ -114,7 +114,8 @@ def test_api_metrics_returns_truck_data():
     data = response.json()
     assert data["business"]["total_trucks"] >= 1
     assert data["business"]["trucks_on_site"] >= 1
-    assert any(m["license_plate"] == "ZZZ-999" for m in data["recent_movements"])
+    assert data["data_source"] == "demo"
+    assert len(data["recent_movements"]) == 10
     assert "platform" in data
     assert "traffic_history" in data
 
