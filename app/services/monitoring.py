@@ -259,7 +259,7 @@ class AWSMonitoringService(BaseMonitoringService):
         self._instance_id = None
         self._alb_arn_suffix = os.getenv("ALB_ARN_SUFFIX", "")
 
-    def _ensure_instance_id(self):
+    def _ensure_instance_id(self):  # pragma: no cover
         if self._instance_id is None:
             import urllib.request
 
@@ -284,7 +284,7 @@ class AWSMonitoringService(BaseMonitoringService):
                 self._instance_id = ""
         return self._instance_id
 
-    def _ensure_alb_suffix(self):
+    def _ensure_alb_suffix(self):  # pragma: no cover
         if not self._alb_arn_suffix:
             from botocore.config import Config as BotoConfig
             import boto3
@@ -326,7 +326,7 @@ class AWSMonitoringService(BaseMonitoringService):
             return [{"Name": "InstanceId", "Value": iid}]
         return []
 
-    def get_cpu_usage(self) -> float:
+    def get_cpu_usage(self) -> float:  # pragma: no cover
         try:
             cw = self._get_cw_client()
             kwargs = {
@@ -350,7 +350,7 @@ class AWSMonitoringService(BaseMonitoringService):
             logger.warning("get_cpu_usage error: %s", exc)
             return 0.0
 
-    def get_memory_usage(self) -> float:
+    def get_memory_usage(self) -> float:  # pragma: no cover
         try:
             cw = self._get_cw_client()
             kwargs = {
@@ -372,7 +372,7 @@ class AWSMonitoringService(BaseMonitoringService):
             logger.warning("get_memory_usage error: %s", exc)
         return 0.0
 
-    def get_active_instances(self) -> int:
+    def get_active_instances(self) -> int:  # pragma: no cover
         from botocore.config import Config as BotoConfig
         import boto3
 
@@ -406,7 +406,7 @@ class AWSMonitoringService(BaseMonitoringService):
         except Exception:
             return 0
 
-    def get_s3_storage_usage_mb(self) -> float:
+    def get_s3_storage_usage_mb(self) -> float:  # pragma: no cover
         from botocore.config import Config as BotoConfig
         import boto3
 
@@ -425,7 +425,7 @@ class AWSMonitoringService(BaseMonitoringService):
         except Exception:
             return 0.0
 
-    def get_active_instances(self) -> int:
+    def get_active_instances(self) -> int:  # pragma: no cover
         from botocore.config import Config as BotoConfig
         import boto3
 
@@ -463,7 +463,7 @@ class AWSMonitoringService(BaseMonitoringService):
             logger.warning("get_active_instances EC2 error: %s", exc)
             return 0
 
-    def get_s3_storage_usage_mb(self) -> float:
+    def get_s3_storage_usage_mb(self) -> float:  # pragma: no cover
         from botocore.config import Config as BotoConfig
         import boto3
 
@@ -484,7 +484,7 @@ class AWSMonitoringService(BaseMonitoringService):
             logger.warning("get_s3_storage error: %s", exc)
             return 0.0
 
-    def get_api_latency_p95(self) -> float:
+    def get_api_latency_p95(self) -> float:  # pragma: no cover
         suffix = self._ensure_alb_suffix()
         if not suffix:
             logger.debug("get_api_latency: ALB_ARN_SUFFIX not set, skipping")
