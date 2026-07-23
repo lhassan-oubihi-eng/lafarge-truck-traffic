@@ -299,6 +299,7 @@ resource "aws_iam_role_policy" "ec2_app" {
         Action = [
           "cloudwatch:GetMetricStatistics",
           "cloudwatch:GetMetricData",
+          "cloudwatch:PutMetricData",
           "autoscaling:DescribeAutoScalingGroups",
           "ec2:DescribeInstances",
           "ec2:DescribeTags",
