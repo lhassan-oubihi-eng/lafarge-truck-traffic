@@ -751,18 +751,53 @@ async def api_metrics():
     system = monitoring.get_system_status()
     traffic_history = monitoring.get_traffic_history(logs=sorted_logs)
 
-    recent = []
-    for entry in sorted_logs[-10:][::-1]:
-        recent.append(
-            {
-                "truck_id": entry.get("truck_id", ""),
-                "license_plate": entry.get("license_plate", ""),
-                "event": entry.get("event", ""),
-                "event_time": entry.get("event_time", ""),
-            }
-        )
+    has_recent_logs = False
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    for log in sorted_logs:
+        try:
+            et = datetime.fromisoformat(log.get("event_time", ""))
+            if et.tzinfo is None:
+                et = et.replace(tzinfo=timezone.utc)
+            if et >= cutoff:
+                has_recent_logs = True
+                break
+        except (ValueError, TypeError):
+            pass
+    data_source = "real" if has_recent_logs else "demo"
+
+    if data_source == "demo":
+        recent = []
+        events = ["truck_entry"] * 7 + ["truck_exit"] * 3
+        now = datetime.now(timezone.utc)
+        for i in range(10):
+            event = random.choice(events)
+            plate = random.choice(MOCK_PLATES)
+            truck_id = str(uuid.uuid4())
+            event_time = (
+                now - timedelta(minutes=i * 2 + random.randint(0, 1))
+            ).isoformat()
+            recent.append(
+                {
+                    "truck_id": truck_id,
+                    "license_plate": plate,
+                    "event": event,
+                    "event_time": event_time,
+                }
+            )
+    else:
+        recent = []
+        for entry in sorted_logs[-10:][::-1]:
+            recent.append(
+                {
+                    "truck_id": entry.get("truck_id", ""),
+                    "license_plate": entry.get("license_plate", ""),
+                    "event": entry.get("event", ""),
+                    "event_time": entry.get("event_time", ""),
+                }
+            )
 
     return {
+        "data_source": data_source,
         "business": {
             "total_trucks": trucks_count,
             "trucks_on_site": trucks_on_site,
