@@ -184,7 +184,8 @@ def test_aws_cpu_usage_returns_zero_on_failure():
     assert cpu == 0.0
 
 
-def test_aws_memory_usage_returns_zero_on_failure():
+@patch("builtins.open", side_effect=OSError)
+def test_aws_memory_usage_returns_zero_on_failure(mock_open):
     svc = AWSMonitoringService()
     mem = svc.get_memory_usage()
     assert mem == 0.0
@@ -395,8 +396,9 @@ def test_aws_cpu_usage_empty_datapoints(mock_boto):
     assert cpu == 0.0
 
 
+@patch("builtins.open", side_effect=OSError)
 @patch("boto3.client")
-def test_aws_memory_usage_empty_datapoints(mock_boto):
+def test_aws_memory_usage_empty_datapoints(mock_boto, mock_open):
     mock_cw = MagicMock()
     mock_cw.get_metric_statistics.return_value = {"Datapoints": []}
     mock_boto.return_value = mock_cw
