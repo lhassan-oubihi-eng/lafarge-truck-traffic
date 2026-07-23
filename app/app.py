@@ -749,7 +749,7 @@ async def api_metrics():
     exits_today = sum(1 for t in sorted_logs if t.get("event") == "truck_exit")
 
     system = monitoring.get_system_status()
-    traffic_history = monitoring.get_traffic_history()
+    traffic_history = monitoring.get_traffic_history(logs=sorted_logs)
 
     recent = []
     for entry in sorted_logs[-10:][::-1]:

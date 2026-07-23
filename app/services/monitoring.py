@@ -7,7 +7,6 @@ Provides system health metrics from real sources:
 
 import json
 import os
-import random
 import socket
 import time
 import logging
@@ -63,23 +62,34 @@ class BaseMonitoringService:
     def _env_config(self) -> dict:
         raise NotImplementedError
 
-    def get_traffic_history(self, hours: int = 24) -> list[dict]:
+    def get_traffic_history(
+        self, logs: list[dict] | None = None, hours: int = 24
+    ) -> list[dict]:
+        if logs is None:
+            logs = []
+        from collections import defaultdict
+
+        hourly_counts = defaultdict(int)
         now = datetime.now(timezone.utc)
+        for log in logs:
+            try:
+                event_time = datetime.fromisoformat(log.get("event_time", ""))
+                if now - timedelta(hours=hours) <= event_time <= now:
+                    hour_key = event_time.replace(minute=0, second=0, microsecond=0)
+                    hourly_counts[hour_key] += 1
+            except (ValueError, TypeError):
+                pass
         data = []
-        base_count = random.randint(5, 12)  # NOSONAR
         for i in range(hours):
-            hour = (now - timedelta(hours=hours - 1 - i)).hour
-            if 8 <= hour <= 12:
-                multiplier = random.uniform(1.5, 2.5)
-            elif 13 <= hour <= 18:
-                multiplier = random.uniform(1.2, 2.0)
-            elif 19 <= hour <= 22:
-                multiplier = random.uniform(0.8, 1.2)
-            else:
-                multiplier = random.uniform(0.2, 0.6)
-            count = int(base_count * multiplier * random.uniform(0.8, 1.2))
-            timestamp = (now - timedelta(hours=hours - 1 - i)).isoformat()
-            data.append({"timestamp": timestamp, "entries": count, "hour": hour})
+            hour_dt = now - timedelta(hours=hours - 1 - i)
+            hour_key = hour_dt.replace(minute=0, second=0, microsecond=0)
+            data.append(
+                {
+                    "timestamp": hour_dt.isoformat(),
+                    "entries": hourly_counts.get(hour_key, 0),
+                    "hour": hour_dt.hour,
+                }
+            )
         return data
 
     def get_system_status(self) -> dict:
