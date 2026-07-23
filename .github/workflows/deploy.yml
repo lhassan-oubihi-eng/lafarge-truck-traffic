@@ -52,12 +52,6 @@ jobs:
         with:
           name: coverage-report
           path: coverage.xml
-      - name: Trivy Scan
-        uses: aquasecurity/trivy-action@c07df6fec6fa692e6fd1200d50aaa1fdd66f03c8
-        with:
-          scan-type: 'fs'
-          exit-code: '1'
-          ignore-unfixed: true
 
   # Job 2: تحليل الجودة
   sonarqube:

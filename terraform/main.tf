@@ -554,7 +554,7 @@ resource "aws_launch_template" "app" {
     aws_region         = var.aws_region            # Region AWS (CloudWatch agent, env vars)
     alb_arn_suffix     = aws_lb.app.arn_suffix     # ALB ARN suffix pour CloudWatch latency metrics
     alb_dns_name       = aws_lb.app.dns_name       # ALB DNS name (auto-découverte fallback)
-    asg_name           = aws_autoscaling_group.app.name  # ASG name pour monitoring
+    asg_name           = "${var.project_name}-asg"  # ASG name pour monitoring
     logs_bucket_name   = "truck-traffic-logs"  # S3 bucket name (logs applicatifs)
   }))
 
