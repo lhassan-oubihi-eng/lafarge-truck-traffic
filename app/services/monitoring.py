@@ -351,6 +351,7 @@ class AWSMonitoringService(BaseMonitoringService):
             return 0.0
 
     def get_memory_usage(self) -> float:  # pragma: no cover
+        # Try CloudWatch agent first (mem_used_percent in CWAgent namespace)
         try:
             cw = self._get_cw_client()
             kwargs = {
@@ -369,7 +370,27 @@ class AWSMonitoringService(BaseMonitoringService):
             if points:
                 return round(max(p["Average"] for p in points), 1)
         except Exception as exc:
-            logger.warning("get_memory_usage error: %s", exc)
+            logger.warning("get_memory_usage CWAgent error: %s", exc)
+        # Fallback: read /proc/meminfo directly (available from Docker on EC2)
+        try:
+            with open("/proc/meminfo") as f:
+                meminfo = f.read()
+            mem_total = None
+            mem_available = None
+            for line in meminfo.splitlines():
+                if line.startswith("MemTotal:"):
+                    mem_total = int(line.split()[1])
+                elif line.startswith("MemAvailable:"):
+                    mem_available = int(line.split()[1])
+            if mem_total and mem_available:
+                used_pct = (mem_total - mem_available) / mem_total * 100
+                logger.debug(
+                    "get_memory_usage: /proc/meminfo fallback = %.1f%%", used_pct
+                )
+                return round(used_pct, 1)
+            logger.warning("get_memory_usage: couldn't parse /proc/meminfo")
+        except OSError as exc:
+            logger.warning("get_memory_usage: /proc/meminfo not available: %s", exc)
         return 0.0
 
     def get_active_instances(self) -> int:  # pragma: no cover
