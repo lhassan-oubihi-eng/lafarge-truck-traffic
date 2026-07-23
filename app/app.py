@@ -770,11 +770,11 @@ async def api_metrics():
         events = ["truck_entry"] * 7 + ["truck_exit"] * 3
         now = datetime.now(timezone.utc)
         for i in range(10):
-            event = random.choice(events)
-            plate = random.choice(MOCK_PLATES)
+            event = secrets.choice(events)
+            plate = secrets.choice(MOCK_PLATES)
             truck_id = str(uuid.uuid4())
             event_time = (
-                now - timedelta(minutes=i * 2 + random.randint(0, 1))
+                now - timedelta(minutes=i * 2 + secrets.randbelow(2))
             ).isoformat()
             recent.append(
                 {
