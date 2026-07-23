@@ -18,6 +18,10 @@ from prometheus_client import Gauge
 
 logger = logging.getLogger(__name__)
 
+IMDS_BASE_URL = (
+    "http://169.254.169.254"  # nosec - EC2 metadata service (link-local, non-routable)
+)
+
 
 SYSTEM_CPU_USAGE = Gauge(
     "system_cpu_usage_percent",
@@ -261,13 +265,13 @@ class AWSMonitoringService(BaseMonitoringService):
 
             try:
                 token_req = urllib.request.Request(
-                    "http://169.254.169.254/latest/api/token",
+                    f"{IMDS_BASE_URL}/latest/api/token",
                     data=b"",
                     headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
                 )
                 token = urllib.request.urlopen(token_req, timeout=2).read().decode()
                 iid_req = urllib.request.Request(
-                    "http://169.254.169.254/latest/meta-data/instance-id",
+                    f"{IMDS_BASE_URL}/latest/meta-data/instance-id",
                     headers={"X-aws-ec2-metadata-token": token},
                 )
                 iid = urllib.request.urlopen(iid_req, timeout=2).read().decode().strip()

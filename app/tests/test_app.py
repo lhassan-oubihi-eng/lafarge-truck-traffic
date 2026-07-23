@@ -203,23 +203,16 @@ def test_get_secret_safely_returns_secret_data():
         assert result == {"DB_HOST": "localhost", "DB_PORT": "5432"}
 
 
-def test_load_runtime_secrets_success():
+def test_load_runtime_secrets_success(monkeypatch):
     load_runtime_secrets.cache_clear()
-    with (
-        patch("app.app.get_secret_safely", return_value={}),
-        patch.dict(
-            os.environ,
-            {
-                "DB_HOST": "localhost",
-                "DB_PORT": "5432",
-                "DB_NAME": "testdb",
-                "DB_USER": "testuser",
-                "DB_PASSWORD": "testpass",  # pragma: allowlist secret
-                "AWS_ACCESS_KEY_ID": "",
-                "AWS_SECRET_ACCESS_KEY": "",
-            },
-        ),
-    ):
+    monkeypatch.setenv("DB_HOST", "localhost")
+    monkeypatch.setenv("DB_PORT", "5432")
+    monkeypatch.setenv("DB_NAME", "testdb")
+    monkeypatch.setenv("DB_USER", "testuser")
+    monkeypatch.setenv("DB_PASSWORD", "testpass")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "")
+    with patch("app.app.get_secret_safely", return_value={}):
         result = load_runtime_secrets()
         assert result["DB_HOST"] == "localhost"
         assert result["DB_PORT"] == "5432"
