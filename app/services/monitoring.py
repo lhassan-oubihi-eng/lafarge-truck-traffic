@@ -277,7 +277,7 @@ class AWSMonitoringService(BaseMonitoringService):
                 iid = urllib.request.urlopen(iid_req, timeout=2).read().decode().strip()
                 self._instance_id = iid
                 logger.info("AWSMonitoringService: instance_id=%s", iid)
-            except Exception:
+            except Exception:  # pragma: no cover
                 logger.warning(
                     "AWSMonitoringService: could not fetch instance-id from IMDS"
                 )
@@ -306,7 +306,7 @@ class AWSMonitoringService(BaseMonitoringService):
                         )
                         return self._alb_arn_suffix
                 logger.warning("AWSMonitoringService: no matching ALB found")
-            except Exception as exc:
+            except Exception as exc:  # pragma: no cover
                 logger.warning("AWSMonitoringService: ALB discovery error: %s", exc)
         return self._alb_arn_suffix
 

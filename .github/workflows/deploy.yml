@@ -91,10 +91,10 @@ jobs:
 
   # Job 3: بناء ورفع Docker
   docker:
-    needs: test-and-scan
+    needs: sonarqube
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # هادي رجعات هي الأولى هنا باش يلقى الملف
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Inject Discord Webhook
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
